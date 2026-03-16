@@ -1,0 +1,59 @@
+# Role capability definitions — which MCP servers each role may access.
+# The spawner enforces these at agent launch time.
+# To add a new MCP to a role, a Tarantoga-approved "new_mcp" approval is required.
+
+roles:
+  council:
+    permitted_mcps:
+      - brave-search
+      - context7
+      - filesystem   # read-only to knowledge/ and state/ — scoped in MCP config
+    check_interval_tool_uses: 10
+    drift_threshold_override: null  # uses global thresholds from simulacra.yaml
+
+  research:
+    permitted_mcps:
+      - brave-search
+      - context7
+      - filesystem   # read-only access to project source — scoped in MCP config
+    check_interval_tool_uses: 8
+    drift_threshold_override: null
+
+  steward:
+    permitted_mcps:
+      - context7
+      - filesystem   # read access to task files and project source — scoped
+      - mirdan
+    check_interval_tool_uses: 8
+    drift_threshold_override: null
+
+  crafter:
+    # Crafters get filesystem access scoped to their assigned project root only.
+    # The spawner sets filesystem_root to the project path before launch.
+    # Additional crafter-type-specific MCPs are defined per crafter_type below.
+    permitted_mcps:
+      - filesystem   # scoped to project root — enforced at MCP level
+      - context7
+      - mirdan
+    check_interval_tool_uses: 6
+    drift_threshold_override: null
+
+# ── Crafter Types ─────────────────────────────────────────────────────────────
+# Each crafter type may specify additional MCPs beyond the base crafter set.
+# New crafter types require a Tarantoga-approved "new_crafter_type" approval.
+crafter_types:
+  backend:
+    additional_mcps: []
+    description: "TypeScript/Node.js backend development"
+
+  frontend:
+    additional_mcps: []
+    description: "React/TypeScript frontend development"
+
+  devops:
+    additional_mcps: []
+    description: "Infrastructure, CI/CD, and deployment"
+
+  data:
+    additional_mcps: []
+    description: "Data pipelines, schemas, and analysis"

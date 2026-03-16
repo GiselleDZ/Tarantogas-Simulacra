@@ -1,0 +1,37 @@
+[
+  {
+    "timestamp": "2026-03-16T22:08:06.588219+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 0.92,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 1,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture",
+      "ai_quality"
+    ]
+  },
+  {
+    "timestamp": "2026-03-16T22:17:25.965000+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 1.0,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture"
+    ]
+  }
+]

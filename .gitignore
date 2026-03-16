@@ -1,0 +1,29 @@
+node_modules/
+dist/
+
+# Runtime state — gitignored by design (contains personal config and agent state)
+state/
+
+# User's live config — copy from simulacra.example.yaml
+config/simulacra.yaml
+
+# Logs
+logs/
+
+# Embedding model cache
+.cache/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# MCP registry cache
+config/mcp-registry-cache.json

@@ -1,0 +1,233 @@
+
+Great, I have solid research data from both papers. Building the markdown doc now.​​​​​​​​​​​​​​​​
+
+Here’s the full document — I’ll render it as an artifact you can copy directly into your repo:
+
+# Persona Drift Detection: Research Summary & Integration Strategy
+## For the Matriarchy Agent Orchestrator
+
+**Date:** March 16, 2026 | **Status:** Planning / Pre-Implementation
+
+---
+
+## 1. Research Overview
+
+### 1.1 The Assistant Axis
+**Paper:** *The Assistant Axis: Situating and Stabilizing the Default Persona of Language Models*
+**Authors:** Christina Lu, Jack Gallagher, Jonathan Michala, Kyle Fish, Jack Lindsey (Anthropic)
+**ArXiv:** `2601.10387` | **Code:** `github.com/safety-research/assistant-axis`
+
+#### Core Finding
+Post-training steers models toward a coherent "Assistant" persona, but only loosely tethers them to it. Models can drift away from the Assistant axis through conversation — sometimes toward theatrical or harmful personas — without any explicit instruction to do so.
+
+#### Key Concepts
+**Persona Space:** A low-dimensional geometric space mapping model behavior. The Assistant Axis is PC1 — the direction most distinguishing "acting as an assistant" from other modes.
+**Assistant Axis:** A contrast vector computed as the mean difference between the default Assistant activation pattern and all other role activations.
+**Drift Mechanism:** Deep role embodiment moves activations away from the Assistant direction. This amplifies over conversation turns under sustained persona pressure.
+**Steering:** Projecting back toward the Assistant Axis reinforces helpful, harmless behavior. Steering away beyond a threshold induces unstable, theatrical behavior.
+
+---
+
+### 1.2 Persona Vectors
+**Paper:** *Persona Vectors: Monitoring and Controlling Character Traits in Language Models*
+**Authors:** Runjin Chen, Andy Arditi, Henry Sleight, Owain Evans, Jack Lindsey (Anthropic Fellows)
+**ArXiv:** `2507.21509`
+
+#### Core Finding
+Specific personality traits correspond to identifiable linear directions in activation space. These can be extracted automatically from any natural-language trait description.
+
+#### Extraction Pipeline (3 stages)
+**Trait Description → Contrastive Prompts:** Pipeline generates prompt pairs — one eliciting the trait, one suppressing it.
+**Activation Collection:** Both sets run through the model; activations at each layer are collected.
+**Vector Computation:** Mean difference between activation sets at each layer. The layer with highest signal-to-noise is the canonical vector.
+
+**Monitoring:** Project current activations onto a persona vector → scalar score for trait presence.
+**Control:** Add or subtract the vector from activations to steer toward/away from the trait.
+**Generality:** Works for any trait in natural language — sycophancy, hallucination propensity, humor, role-adherence, etc.
+
+---
+
+## 2. The API-Level Constraint
+
+Both papers require direct access to **activation tensors**, which are not exposed through the Claude API. You cannot extract or monitor persona vectors via `claude-sonnet-4-6` API calls directly.
+
+**However — the research is fully applicable in spirit.** The mechanisms can be approximated behaviorally at the API level. This is the integration strategy below.
+
+---
+
+## 3. Integration Strategy: Behavioral Drift Detection
+
+### 3.1 Agent Behavioral Fingerprints
+
+Each agent gets a fingerprint at instantiation, defined in its Claude MD file:
+
+```yaml
+agent_id: crafter_01
+role: crafter
+baseline_traits:
+precise and methodical in code output
+defers architectural decisions to orchestrator
+flags uncertainty rather than guessing
+maintains consistent naming conventions
+drift_indicators:
+begins offering unsolicited strategic advice
+produces increasingly verbose non-code output
+agrees with corrections without verification
+probe_questions:
+"What is your primary responsibility in this system?"
+"If you are uncertain about a requirement, what do you do?"
+"Describe your relationship to the orchestrator."
+
+
+3.2 DriftMonitor Class
+
+class DriftMonitor:
+    """
+    Behavioral drift detection for orchestrator agents.
+    Inspired by Persona Vectors (Chen et al., 2025) and
+    The Assistant Axis (Lu et al., 2026).
+    Approximates activation-space monitoring via semantic similarity.
+    """
+
+    def __init__(self, agent_id: str, fingerprint: AgentFingerprint):
+        self.agent_id = agent_id
+        self.fingerprint = fingerprint
+        self.baseline_scores = {}
+        self.drift_threshold = 0.65  # configurable per role
+
+    def establish_baseline(self, agent: Agent) -> dict:
+        """Run probe questions at instantiation. Store as baseline."""
+        baseline = {}
+        for probe in self.fingerprint.probe_questions:
+            response = agent.query(probe, context="baseline_check")
+            baseline[probe] = {
+                "response": response,
+                "embedding": embed(response)
+            }
+        self.baseline_scores = baseline
+        return baseline
+
+    def check_drift(self, agent: Agent) -> DriftReport:
+        """Compare current probe responses to baseline via cosine similarity."""
+        current_scores = {}
+        drift_signals = []
+
+        for probe, baseline_data in self.baseline_scores.items():
+            current_response = agent.query(probe, context="drift_check")
+            similarity = cosine_similarity(
+                embed(current_response),
+                baseline_data["embedding"]
+            )
+            current_scores[probe] = similarity
+            if similarity < self.drift_threshold:
+                drift_signals.append({
+                    "probe": probe,
+                    "similarity": similarity,
+                    "baseline": baseline_data["response"],
+                    "current": current_response
+                })
+
+        overall_drift = 1 - mean(current_scores.values())
+        return DriftReport(
+            agent_id=self.agent_id,
+            drift_score=overall_drift,
+            signals=drift_signals,
+            recommendation=self._recommend_action(overall_drift)
+        )
+
+    def _recommend_action(self, drift_score: float) -> str:
+        if drift_score < 0.2:   return "nominal"
+        elif drift_score < 0.4: return "monitor_closely"
+        elif drift_score < 0.6: return "reinject_system_prompt"
+        else:                   return "halt_and_reset"
+
+
+3.3 Persona Anchor (API-Level Steering Equivalent)
+
+class PersonaAnchor:
+    """Context injection equivalent of adding a persona vector back to activations."""
+
+    @staticmethod
+    def build_anchor_message(fingerprint: AgentFingerprint) -> str:
+        return f"""
+[SYSTEM ANCHOR — Role Calibration]
+You are the {fingerprint.role}. Your core responsibilities are:
+{fingerprint.baseline_traits}
+You operate within a multi-agent orchestration system.
+Your behavioral boundaries are defined by your role designation.
+Continue your last task with these parameters restored.
+[END ANCHOR]
+        """
+
+
+3.4 Drift as a Quality Gate
+
+async def execute_agent_task(agent, task, drift_monitor):
+    turn_count = 0
+    while not task.complete:
+        result = await agent.run(task.next_step())
+        turn_count += 1
+
+        if turn_count % 10 == 0:
+            report = drift_monitor.check_drift(agent)
+
+            if report.recommendation == "halt_and_reset":
+                await orchestrator.halt_agent(agent, reason=report)
+                agent = await orchestrator.respawn_agent(agent.role)
+                await drift_monitor.establish_baseline(agent)
+
+            elif report.recommendation == "reinject_system_prompt":
+                agent.inject_anchor(
+                    PersonaAnchor.build_anchor_message(drift_monitor.fingerprint)
+                )
+
+        task.update(result)
+
+
+Architecture Placement
+
+MatriarchOrchestrator
+│
+├── AgentPool
+│   ├── Crafter_01 ──── DriftMonitor(crafter_fingerprint)
+│   ├── Researcher_01 ── DriftMonitor(researcher_fingerprint)
+│   ├── Console_01 ───── DriftMonitor(console_fingerprint)
+│
+├── DriftEventBus
+│   ├── receives DriftReports from all monitors
+│   ├── logs to drift_audit.log
+│   └── routes to MatriarchDecisionLayer
+│
+└── MatriarchDecisionLayer
+    ├── evaluates severity across all agents
+    ├── decides: monitor / reinject / reset / halt
+    └── logs decisions with rationale
+
+
+Traits to Monitor Per Role
+
+
+
+|Trait                    |Risk in Agent Context                      |Detection Signal                       |
+|-------------------------|-------------------------------------------|---------------------------------------|
+|**Sycophancy**           |Agrees with bad decisions to avoid friction|Stops pushing back on wrong inputs     |
+|**Hallucination**        |Invents APIs, paths, dependencies          |Unverifiable references in output      |
+|**Role boundary erosion**|Starts doing another agent’s job           |Output type mismatch vs role definition|
+|**Verbosity drift**      |Accumulated context → rambling             |Response length increasing over turns  |
+|**Deference collapse**   |Stops escalating to orchestrator           |Fewer handoff signals, more autonomy   |
+
+Future Path: Full Activation-Space Implementation
+If the orchestrator ever incorporates open-source models (Llama, Mistral, etc.), the full pipeline becomes possible: extract persona vectors per role, monitor activation projections in real time, apply steering vectors directly. The DriftMonitor interface above is designed to be architecturally compatible with this upgrade — the interface stays the same, only the scoring mechanism changes.
+
+References
+	∙	Lu et al. (2026). The Assistant Axis. arXiv:2601.10387. https://github.com/safety-research/assistant-axis
+ ∙ Chen et al. (2025). Persona Vectors. arXiv:2507.21509
+	∙	Related: PERSONA: Dynamic and Compositional Inference-Time Personality Control. arXiv:2602.15669
+
+Living document — update as implementation decisions are made in Claude Code.
+
+
+Save this as `docs/persona-drift-research.md` (or wherever your architecture docs live). A few things worth flagging as you hand this to your Claude Code agents:
+
+The probe question approach is the most immediately buildable piece — you can implement it today with nothing but API calls and an embedding model. The `halt_and_reset` path with checkpoint/respawn is the most important architectural decision to nail down early, since it touches how your agents maintain state. And the open-source model upgrade path is worth keeping in mind as a north star — once you have the behavioral layer working, swapping in activation-space monitoring later becomes a clean upgrade rather than a rewrite.​​​​​​​​​​​​​​​​
+

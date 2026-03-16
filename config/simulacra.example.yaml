@@ -1,0 +1,68 @@
+# Simulacra configuration — copy this file to simulacra.yaml and fill in your values.
+# simulacra.yaml is gitignored; this example file is committed.
+
+# ── Orchestrator ─────────────────────────────────────────────────────────────
+orchestrator:
+  # How often (ms) the orchestrator polls state/ for changes when file watching
+  # is unavailable or unreliable.
+  poll_interval_ms: 500
+
+  # Retention: tasks in "done" or "cancelled" are archived after this many days.
+  archive_after_days: 30
+
+# ── Anthropic API ─────────────────────────────────────────────────────────────
+anthropic:
+  # Your Anthropic API key. Can also be set via ANTHROPIC_API_KEY env var.
+  # api_key: "sk-ant-..."
+
+  # Default model for all agents.
+  default_model: "claude-opus-4-6"
+
+# ── Drift Detection ───────────────────────────────────────────────────────────
+drift:
+  # Embedding model for cosine similarity scoring (local, offline).
+  embedding_model: "Xenova/all-MiniLM-L6-v2"
+
+  # Default number of tool uses between Tier 1 self-assessments.
+  # Can be overridden per role in roles.yaml.
+  default_check_interval_tool_uses: 8
+
+  # Drift score thresholds (cosine distance from baseline, 0–1).
+  # Score below nominal_max → nominal (log only)
+  # Score in [nominal_max, monitor_max) → monitor (flag for Steward)
+  # Score in [monitor_max, reinject_max) → reinject PersonaAnchor
+  # Score >= reinject_max → halt and reset
+  thresholds:
+    nominal_max: 0.2
+    monitor_max: 0.4
+    reinject_max: 0.6
+
+# ── MCP Servers ───────────────────────────────────────────────────────────────
+# Define all MCP servers available in this installation.
+# Each key is the server name used in roles.yaml permitted_mcps lists.
+mcp_servers:
+  filesystem:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-filesystem"]
+
+  brave-search:
+    command: "npx"
+    args: ["-y", "@modelcontextprotocol/server-brave-search"]
+    env:
+      BRAVE_API_KEY: ""  # Set to your Brave Search API key
+
+  context7:
+    command: "npx"
+    args: ["-y", "@upstash/context7-mcp"]
+
+  mirdan:
+    command: "npx"
+    args: ["-y", "mirdan-mcp"]
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+paths:
+  state_dir: "state"
+  roles_dir: "roles"
+  knowledge_dir: "state/knowledge"
+  projects_dir: "projects"
+  logs_dir: "logs"

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/gz/AppData/Roaming/Claude/**)",
+      "Read(//c/Users/gz/.claude/**)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(list\\(d.get\\(''''mcpServers'''',{}\\).keys\\(\\)\\), indent=2\\)\\)\")",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Skill(plan)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/gz/Desktop/Programming/Tarantogas-Simulacra/**)",
+      "Bash(done)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(find:*)",
+      "Bash(for d:*)",
+      "mcp__mirdan__enhance_prompt",
+      "Skill(code)",
+      "Bash(cd:*)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "mirdan"
+  ]
+}

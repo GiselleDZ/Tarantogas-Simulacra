@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulacra</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="logo">SIMULACRA</div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="approvals">
+        Approvals <span class="tab-count" id="tab-count-approvals"></span>
+      </button>
+      <button class="tab" data-tab="activity">Activity</button>
+      <button class="tab" data-tab="projects">Projects</button>
+      <button class="tab" data-tab="system">System</button>
+    </nav>
+    <div class="ws-status" id="ws-status" title="WebSocket connection"></div>
+  </header>
+
+  <main>
+    <div id="tab-approvals" class="tab-pane">
+      <aside id="queue">
+        <div id="queue-empty" class="empty-state">No approvals yet</div>
+      </aside>
+
+      <section id="detail">
+        <div id="detail-empty" class="empty-state">Select an approval from the queue</div>
+        <div id="detail-content" hidden>
+          <div class="detail-meta" id="detail-meta"></div>
+          <div class="detail-body">
+            <div class="section-label">Request</div>
+            <pre id="detail-body-text"></pre>
+          </div>
+          <div class="context-section">
+            <button id="ctx-toggle" class="ctx-toggle">▸ Show research context</button>
+            <div id="ctx-content" class="ctx-content" hidden></div>
+          </div>
+          <div class="detail-actions" id="detail-actions"></div>
+        </div>
+      </section>
+    </div>
+
+    <div id="tab-activity" class="tab-pane" hidden>
+      <div id="activity-toolbar">
+        <div class="role-filters">
+          <button class="role-filter active" data-role="all">All</button>
+          <button class="role-filter" data-role="council">Council</button>
+          <button class="role-filter" data-role="steward">Steward</button>
+          <button class="role-filter" data-role="crafter">Crafter</button>
+          <button class="role-filter" data-role="research">Research</button>
+        </div>
+        <label class="autoscroll-label">
+          <input type="checkbox" id="autoscroll" checked> Auto-scroll
+        </label>
+      </div>
+      <div id="activity-feed"></div>
+    </div>
+
+    <div id="tab-projects" class="tab-pane" hidden>
+      <div id="projects-sidebar">
+        <button class="sidebar-toggle-btn" id="add-project-btn">+ New Project</button>
+        <form id="add-project-form" hidden>
+          <div class="form-field">
+            <label class="form-label">Name</label>
+            <input type="text" id="proj-name" class="form-input" placeholder="My Project" required>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Repo Path</label>
+            <input type="text" id="proj-path" class="form-input" placeholder="/absolute/path/to/repo" required>
+          </div>
+          <div class="form-field">
+            <label class="form-label">Crafter Types</label>
+            <input type="text" id="proj-crafters" class="form-input" placeholder="frontend, backend" required>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-approve" style="font-size:11px;padding:5px 14px">Submit</button>
+            <button type="button" id="add-project-cancel" class="btn btn-defer" style="font-size:11px;padding:5px 14px">Cancel</button>
+          </div>
+        </form>
+        <div id="projects-list">
+          <div id="projects-empty-sidebar" class="empty-state">No projects yet</div>
+        </div>
+      </div>
+
+      <div id="projects-main">
+        <div id="projects-empty-main" class="empty-state" style="padding:60px 32px">
+          Select a project from the sidebar
+        </div>
+        <div id="project-view" hidden>
+          <div id="project-header"></div>
+          <div id="task-pipeline"></div>
+          <div id="task-detail" hidden>
+            <div id="task-detail-header"></div>
+            <div id="task-detail-meta"></div>
+            <div id="task-detail-body"></div>
+            <div id="task-detail-actions"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-system" class="tab-pane" hidden>
+      <div class="coming-soon">System Health — Phase 4</div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

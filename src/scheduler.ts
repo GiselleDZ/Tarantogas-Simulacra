@@ -10,7 +10,9 @@ import { promises as fs } from "fs";
 import { readMarkdownFile, writeMarkdownFile } from "./io/fileStore.js";
 import { readRegistry } from "./agents/spawner.js";
 import { spawnCrafter } from "./agents/crafter.js";
-import { spawnStewardForReview } from "./agents/steward.js";
+import { spawnCouncilForKickoff } from "./agents/council.js";
+import { evaluateTransitions } from "./workflow/taskPipeline.js";
+import { listProjects, setProjectStatus } from "./workflow/onboarding.js";
 import { randomUUID } from "crypto";
 import type {
   TaskFrontmatter,
@@ -133,12 +135,47 @@ async function isDoneById(taskId: string): Promise<boolean> {
 }
 
 /**
+ * Reset an orphaned task (assigned but no live agent) back to pending.
+ */
+async function resetOrphanedTask(filePath: string): Promise<void> {
+  const doc = await readMarkdownFile<TaskFrontmatter>(filePath);
+  if (doc === null) return;
+  const updated: TaskFrontmatter = {
+    ...doc.frontmatter,
+    status: "pending",
+    assigned_crafter: null,
+    updated_at: new Date().toISOString(),
+  };
+  await writeMarkdownFile(filePath, updated, doc.body);
+  console.warn(`[Scheduler] Orphaned task reset to pending: ${filePath}`);
+}
+
+/**
  * Run one scheduling cycle: assign pending tasks to new agents.
  * Called by the orchestrator on its poll interval.
  */
 export async function runSchedulerCycle(
   deps: SchedulerDependencies,
 ): Promise<void> {
+  // Detect and launch kickoff agents for newly activated projects
+  const kickoffProjects = await listProjects("kickoff_pending");
+  for (const project of kickoffProjects) {
+    await setProjectStatus(project.slug, "kickoff_in_progress");
+    const councilId = `council-kickoff-${randomUUID()}`;
+    await spawnCouncilForKickoff(
+      project.slug,
+      project.path,
+      councilId,
+      deps,
+      async (result) => {
+        if (!result.success) {
+          console.error(`[Scheduler] Kickoff Council failed for ${project.slug} — requeueing`);
+          await setProjectStatus(project.slug, "kickoff_pending");
+        }
+      },
+    );
+  }
+
   const pending = await scanPendingTasks();
   if (pending.length === 0) return;
 
@@ -150,6 +187,32 @@ export async function runSchedulerCycle(
   if (activeAgentCount >= MAX_CONCURRENT_AGENTS) return;
 
   for (const task of pending) {
+    if (task.frontmatter.status === "assigned") {
+      const alive =
+        task.frontmatter.assigned_crafter !== null &&
+        registry[task.frontmatter.assigned_crafter] !== undefined;
+      if (alive) continue;
+
+      // Re-read body and check for a pending sentinel before resetting.
+      // If a sentinel is present, the file watcher will apply the transition —
+      // do not stomp it with an orphan reset.
+      const freshDoc = await readMarkdownFile<TaskFrontmatter>(task.filePath);
+      if (freshDoc !== null) {
+        const pending = evaluateTransitions(
+          freshDoc.frontmatter.status,
+          freshDoc.body,
+          freshDoc.frontmatter,
+        );
+        if (pending !== null) {
+          console.log(`[Scheduler] Sentinel present in assigned task — skipping orphan reset: ${task.filePath}`);
+          continue;
+        }
+      }
+
+      await resetOrphanedTask(task.filePath);
+      continue;
+    }
+
     if (task.frontmatter.status !== "pending") continue;
     if (task.frontmatter.blocked_by.length > 0) {
       const resolved = await dependenciesResolved(task);
@@ -157,7 +220,7 @@ export async function runSchedulerCycle(
     }
 
     const crafterAgentId = `crafter-${randomUUID()}`;
-    const projectPath = path.dirname(path.dirname(task.filePath));
+    const projectPath = task.frontmatter.project_path ?? process.cwd();
 
     // Mark as assigned before spawning
     const updated: TaskFrontmatter = {

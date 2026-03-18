@@ -92,6 +92,54 @@ export async function spawnCouncilForPeerReview(
 }
 
 /**
+ * Spawn a Council agent to review research output and approve it for Crafter assignment.
+ * The agent reads ## Research Output, writes ## Council Research Review, and signals approved.
+ */
+export async function spawnCouncilForResearchReview(
+  taskFilePath: string,
+  projectSlug: string,
+  projectPath: string,
+  councilAgentId: string,
+  deps: SpawnDependencies,
+  onExit: (result: AgentResult) => void | Promise<void>,
+): Promise<void> {
+  const context: AgentContext = {
+    role: "council",
+    agent_id: councilAgentId,
+    task_file_path: taskFilePath,
+    project_path: projectPath,
+    project_slug: projectSlug,
+    extra_context: `You are reviewing the research output for this task. Read the ## Research Output section, analyse the findings, and write your review and any recommendations to ## Council Research Review. Update the task frontmatter field research_doc_refs with paths to relevant research documents the Crafter should read. When satisfied, write: RESEARCH_SIGNAL: approved`,
+  };
+
+  await spawnAgent(context, { ...deps, onExit });
+}
+
+/**
+ * Spawn a Council agent to perform a project kickoff.
+ * No task file is provided — the agent reads the project's implementation plan,
+ * assesses existing code, creates task files (status: blocked), and submits
+ * a plan_approval for Tarantoga to review before work begins.
+ */
+export async function spawnCouncilForKickoff(
+  projectSlug: string,
+  projectPath: string,
+  councilId: string,
+  deps: SpawnDependencies,
+  onExit: (result: AgentResult) => Promise<void>,
+): Promise<void> {
+  const context: AgentContext = {
+    role: "council",
+    agent_id: councilId,
+    project_path: projectPath,
+    project_slug: projectSlug,
+    extra_context: `You have no task file — your entry point is the ## Project Kickoff section of your CLAUDE.md role file.\nProject slug: ${projectSlug}\nProject path: ${projectPath}\nFollow the Project Kickoff workflow exactly as written in your role file.`,
+  };
+
+  await spawnAgent(context, { ...deps, onExit });
+}
+
+/**
  * Read assigned Council agent IDs from a task file.
  */
 export async function readCouncilAssignments(

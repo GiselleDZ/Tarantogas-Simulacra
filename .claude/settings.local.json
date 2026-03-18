@@ -18,7 +18,22 @@
       "Bash(for d:*)",
       "mcp__mirdan__enhance_prompt",
       "Skill(code)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(node:*)",
+      "Bash(rustc:*)",
+      "mcp__mirdan__validate_code_quality",
+      "Bash(echo:*)",
+      "Bash(printf:*)",
+      "Bash(grep:*)",
+      "WebSearch",
+      "Bash(tasklist:*)",
+      "WebFetch(domain:oklch.com)",
+      "WebFetch(domain:products.aspose.app)",
+      "WebFetch(domain:atmos.style)",
+      "WebFetch(domain:culorijs.org)",
+      "mcp__mirdan__get_quality_standards",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

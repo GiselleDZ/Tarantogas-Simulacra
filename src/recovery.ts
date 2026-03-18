@@ -71,13 +71,14 @@ async function markTaskBlocked(
 
   const updated: TaskFrontmatter = {
     ...doc.frontmatter,
-    status: "blocked",
+    status: "pending",
+    assigned_crafter: null,
     updated_at: new Date().toISOString(),
   };
 
   const appendedBody =
     doc.body +
-    `\n\n## Recovery Note\n\nTask blocked due to crash of agent \`${crashedAgentId}\`. Awaiting reassignment.\n`;
+    `\n\n## Recovery Note\n\nTask re-queued after crash of agent \`${crashedAgentId}\`. Scheduler will reassign.\n`;
 
   await writeMarkdownFile(
     taskFilePath,

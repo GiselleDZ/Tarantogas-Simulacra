@@ -152,6 +152,9 @@ function formatApprovalTitle(type: ApprovalType, project: string | null): string
     scope_change: "Scope Change Request",
     out_of_scope_finding: "Out-of-Scope Finding",
     task_cancellation: "Task Cancellation Request",
+    design_decision: "Design Decision Approval",
+    research_request: "Research Request",
+    implementation_ambiguity: "Implementation Ambiguity",
   };
   return `${labels[type]}${projectSuffix}`;
 }

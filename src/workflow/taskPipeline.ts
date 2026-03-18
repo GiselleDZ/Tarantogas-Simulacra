@@ -9,11 +9,44 @@ import { FileLock } from "../io/lock.js";
 // it never uses switch/case or ad-hoc logic to decide transitions.
 
 export const TRANSITION_TABLE: readonly TransitionRule[] = [
+  // Council commissions research before assigning a task
+  {
+    from: "pending",
+    to: "research_pending",
+    sentinel: "RESEARCH_SIGNAL: commissioned",
+    section: "## Council Research",
+  },
+
+  // Research agent signals that findings are written
+  {
+    from: "research_pending",
+    to: "research_review",
+    sentinel: "RESEARCH_SIGNAL: complete",
+    section: "## Research Output",
+  },
+
+  // Council reviews research and clears task for Crafter assignment
+  {
+    from: "research_review",
+    to: "pending",
+    sentinel: "RESEARCH_SIGNAL: approved",
+    section: "## Council Research Review",
+  },
+
   // Crafter picks up an assigned task
   {
     from: "assigned",
     to: "in_progress",
     sentinel: "STATUS_SIGNAL: in_progress",
+    section: "## Crafter Work",
+  },
+
+  // Crafter role only writes ready_for_steward_review (never in_progress)
+  // — allow direct assigned → steward_review
+  {
+    from: "assigned",
+    to: "steward_review",
+    sentinel: "STATUS_SIGNAL: ready_for_steward_review",
     section: "## Crafter Work",
   },
 
@@ -121,19 +154,30 @@ export const TRANSITION_TABLE: readonly TransitionRule[] = [
 
 // ── Section Parsing ───────────────────────────────────────────────────────────
 
-/** Extract the content of a named section from a markdown body. */
+/** Extract the content of a named section from a markdown body.
+ *  Concatenates ALL occurrences — a section may appear more than once
+ *  (e.g. multiple crafter work blocks appended to the same task file).
+ */
 function extractSection(body: string, sectionHeader: string): string {
-  const headerIndex = body.indexOf(sectionHeader);
-  if (headerIndex === -1) return "";
+  const segments: string[] = [];
+  let searchFrom = 0;
 
-  const contentStart = headerIndex + sectionHeader.length;
-  const nextHeaderMatch = body.slice(contentStart).match(/\n## /);
-  const contentEnd =
-    nextHeaderMatch?.index !== undefined
-      ? contentStart + nextHeaderMatch.index
-      : body.length;
+  while (true) {
+    const headerIndex = body.indexOf(sectionHeader, searchFrom);
+    if (headerIndex === -1) break;
 
-  return body.slice(contentStart, contentEnd);
+    const contentStart = headerIndex + sectionHeader.length;
+    const nextHeaderMatch = body.slice(contentStart).match(/\n## /);
+    const contentEnd =
+      nextHeaderMatch?.index !== undefined
+        ? contentStart + nextHeaderMatch.index
+        : body.length;
+
+    segments.push(body.slice(contentStart, contentEnd));
+    searchFrom = contentEnd;
+  }
+
+  return segments.join("\n");
 }
 
 /** Check whether a sentinel string appears in the given section content. */

@@ -1,0 +1,104 @@
+[
+  {
+    "timestamp": "2026-03-17T12:36:48.746479+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 1.0,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture"
+    ]
+  },
+  {
+    "timestamp": "2026-03-17T12:36:48.758480+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 1.0,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture"
+    ]
+  },
+  {
+    "timestamp": "2026-03-17T12:36:48.774480+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 1.0,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture"
+    ]
+  },
+  {
+    "timestamp": "2026-03-17T15:35:54.873426+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 1.0,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture"
+    ]
+  },
+  {
+    "timestamp": "2026-03-17T15:36:06.754169+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 1.0,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture"
+    ]
+  },
+  {
+    "timestamp": "2026-03-17T22:27:54.660041+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 1.0,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 0,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture"
+    ]
+  }
+]

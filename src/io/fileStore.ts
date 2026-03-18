@@ -35,9 +35,15 @@ export async function writeFile(
   try {
     await fs.writeFile(tmp, content, "utf-8");
     await fs.rename(tmp, filePath);
-  } catch (err: unknown) {
+  } catch (renameErr: unknown) {
     await fs.unlink(tmp).catch(() => undefined);
-    throw err;
+    if (isNodeError(renameErr) && renameErr.code === "EPERM") {
+      // Windows: rename over a transiently-locked file fails with EPERM.
+      // Fall back to a direct write — safe because only one writer uses this path.
+      await fs.writeFile(filePath, content, "utf-8");
+      return;
+    }
+    throw renameErr;
   }
 }
 

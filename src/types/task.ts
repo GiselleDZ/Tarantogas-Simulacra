@@ -1,6 +1,8 @@
 /** Task status — the full lifecycle of a unit of work */
 export type TaskStatus =
   | "pending"
+  | "research_pending"
+  | "research_review"
   | "assigned"
   | "in_progress"
   | "steward_review"
@@ -36,6 +38,11 @@ export interface TaskFrontmatter {
   readonly priority: TaskPriority;
   scope_confirmed: boolean;
   readonly crafter_type: string;
+  readonly project_path?: string;
+  /** Paths to research documents the Crafter must read before implementing */
+  readonly research_doc_refs?: readonly string[];
+  /** Council's token estimate before task assignment — null until estimated */
+  estimated_context_tokens?: number | null;
 }
 
 /** Sentinel signals agents write to their sections to trigger transitions */
@@ -45,7 +52,10 @@ export type TaskSentinel =
   | "DRIFT_SIGNAL: FLAGGED"
   | "COMPOUND_SIGNAL: complete"
   | "COUNCIL_SIGNAL: APPROVED"
-  | "COUNCIL_SIGNAL: REVISION_REQUIRED";
+  | "COUNCIL_SIGNAL: REVISION_REQUIRED"
+  | "RESEARCH_SIGNAL: commissioned"
+  | "RESEARCH_SIGNAL: complete"
+  | "RESEARCH_SIGNAL: approved";
 
 /** A complete parsed task document */
 export interface Task {

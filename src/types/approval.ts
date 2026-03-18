@@ -6,7 +6,10 @@ export type ApprovalType =
   | "plan_approval"
   | "scope_change"
   | "out_of_scope_finding"
-  | "task_cancellation";
+  | "task_cancellation"
+  | "design_decision"
+  | "research_request"
+  | "implementation_ambiguity";
 
 export type ApprovalStatus =
   | "pending"

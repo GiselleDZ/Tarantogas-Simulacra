@@ -1,6 +1,8 @@
 export type ProjectStatus =
   | "onboarding_requested"
   | "onboarding_in_progress"
+  | "kickoff_pending"
+  | "kickoff_in_progress"
   | "active"
   | "declined"
   | "archived";
@@ -16,6 +18,8 @@ export interface ProjectRegistry {
   readonly crafter_types: readonly string[];
   /** Task IDs currently active in this project */
   readonly active_task_ids: readonly string[];
+  /** Tracks the in-flight plan_approval so orchestrator can correlate decisions back to this project */
+  readonly kickoff_plan_approval_ref?: string | null;
 }
 
 /** A project plan authored by Council, awaiting Tarantoga approval */

@@ -79,8 +79,8 @@ export async function onboardProject(
 
 /**
  * Activate a project after Tarantoga approves the onboarding.
- * Updates the registry status to "active" and creates the project's
- * task and knowledge directories.
+ * Sets status to "kickoff_pending" so the scheduler spawns a Council kickoff agent.
+ * Also creates the project's task and knowledge directories.
  */
 export async function activateProject(slug: string): Promise<void> {
   const { promises: fs } = await import("fs");
@@ -93,7 +93,7 @@ export async function activateProject(slug: string): Promise<void> {
 
   const updated: ProjectRegistry = {
     ...entry,
-    status: "active" as ProjectStatus,
+    status: "kickoff_pending" as ProjectStatus,
     updated_at: new Date().toISOString(),
   };
 
@@ -109,6 +109,28 @@ export async function activateProject(slug: string): Promise<void> {
   for (const dir of dirs) {
     await fs.mkdir(dir, { recursive: true });
   }
+}
+
+/**
+ * Set a project's status to any ProjectStatus.
+ * Used by the orchestrator to react to approval decisions without
+ * coupling approval logic to the full onboarding domain actions.
+ */
+export async function setProjectStatus(
+  slug: string,
+  status: ProjectStatus,
+): Promise<void> {
+  const registry = await readProjectRegistry();
+  const entry = registry[slug];
+  if (entry === undefined) {
+    throw new Error(`Project not found: ${slug}`);
+  }
+  const updated: ProjectRegistry = {
+    ...entry,
+    status,
+    updated_at: new Date().toISOString(),
+  };
+  await writeProjectRegistry({ ...registry, [slug]: updated });
 }
 
 /**

@@ -1,24 +1,6 @@
 [
   {
-    "timestamp": "2026-03-16T22:08:06.588219+00:00",
-    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
-    "language": "typescript",
-    "score": 0.92,
-    "passed": true,
-    "violation_counts": {
-      "error": 0,
-      "warning": 1,
-      "info": 0
-    },
-    "standards_checked": [
-      "typescript_style",
-      "security",
-      "architecture",
-      "ai_quality"
-    ]
-  },
-  {
-    "timestamp": "2026-03-16T22:17:25.965000+00:00",
+    "timestamp": "2026-03-18T02:01:09.543623+00:00",
     "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
     "language": "typescript",
     "score": 1.0,
@@ -35,20 +17,39 @@
     ]
   },
   {
-    "timestamp": "2026-03-16T23:00:52.928579+00:00",
+    "timestamp": "2026-03-18T15:50:06.121321+00:00",
     "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
     "language": "typescript",
-    "score": 0.98,
+    "score": 0.6799999999999999,
     "passed": true,
     "violation_counts": {
       "error": 0,
-      "warning": 0,
-      "info": 1
+      "warning": 4,
+      "info": 0
     },
     "standards_checked": [
       "typescript_style",
       "security",
-      "architecture"
+      "architecture",
+      "ai_quality"
+    ]
+  },
+  {
+    "timestamp": "2026-03-18T16:15:39.719070+00:00",
+    "project_path": "C:\\Users\\gz\\Desktop\\Programming\\Tarantogas-Simulacra",
+    "language": "typescript",
+    "score": 0.92,
+    "passed": true,
+    "violation_counts": {
+      "error": 0,
+      "warning": 1,
+      "info": 0
+    },
+    "standards_checked": [
+      "typescript_style",
+      "security",
+      "architecture",
+      "ai_quality"
     ]
   }
 ]

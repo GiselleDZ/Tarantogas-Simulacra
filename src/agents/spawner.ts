@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "child_process";
-import { randomUUID } from "crypto";
 import path from "path";
+import { promises as fs } from "fs";
 import { writeFile, readFile } from "../io/fileStore.js";
 import { FileLock } from "../io/lock.js";
 import type {
@@ -98,7 +98,7 @@ function resolveCapabilities(
     permitted_mcps: [...permittedSet],
     mcp_configs,
   };
-  return role === "crafter" && projectPath !== undefined
+  return projectPath !== undefined
     ? { ...base, filesystem_root: projectPath }
     : base;
 }
@@ -133,6 +133,8 @@ function buildInitialPrompt(context: AgentContext): string {
       `Your task file is at: ${context.task_file_path}`,
       `Read it first with the Read tool, then carry out the work described.`,
     );
+  } else {
+    lines.push(`You have no task file — your entry point is in the extra context below.`);
   }
 
   if (context.project_path !== undefined) {
@@ -160,7 +162,7 @@ async function buildClaudeArgs(
   context: AgentContext,
   capabilities: AgentCapabilities,
   rolesDir: string,
-): Promise<readonly string[]> {
+): Promise<{ args: readonly string[]; prompt: string }> {
   const args: string[] = [
     // Non-interactive agentic mode — agent runs, uses tools, exits
     "--print",
@@ -188,12 +190,12 @@ async function buildClaudeArgs(
     args.push("--add-dir", capabilities.filesystem_root);
   }
   // All agents need access to state/ for task files, drift checks, etc.
-  args.push("--add-dir", "state");
+  // Use absolute path — the agent's cwd may be a project directory, not Simulacra root.
+  args.push("--add-dir", path.resolve("state"));
 
-  // Initial prompt (must be last — it's the positional argument)
-  args.push(buildInitialPrompt(context));
-
-  return args;
+  // Prompt is delivered via stdin (not as a positional arg) so that newlines
+  // are never mangled by cmd.exe argument quoting on Windows.
+  return { args, prompt: buildInitialPrompt(context) };
 }
 
 export interface SpawnOptions {
@@ -210,7 +212,6 @@ export async function spawnAgent(
   context: AgentContext,
   options: SpawnOptions,
 ): Promise<{ identity: AgentIdentity; process: ChildProcess }> {
-  const agentId = `${context.role}-${randomUUID()}`;
   const spawnedAt = new Date().toISOString();
 
   const capabilities = resolveCapabilities(
@@ -222,7 +223,7 @@ export async function spawnAgent(
   );
 
   const identityBase = {
-    id: agentId,
+    id: context.agent_id,
     role: context.role,
     spawned_at: spawnedAt,
     pid: 0 as number,
@@ -238,8 +239,8 @@ export async function spawnAgent(
   };
   const identity: AgentIdentity = identityBase;
 
-  const cliArgs = await buildClaudeArgs(
-    { ...context, agent_id: agentId },
+  const { args: cliArgs, prompt } = await buildClaudeArgs(
+    context,
     capabilities,
     options.simulacraConfig.paths.roles_dir,
   );
@@ -249,34 +250,82 @@ export async function spawnAgent(
   const cwd = capabilities.filesystem_root ?? process.cwd();
 
   const proc = spawn("claude", [...cliArgs], {
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env },
     cwd,
   });
 
+  proc.on("error", (spawnErr: Error) => {
+    console.error(`[Spawner] Failed to start agent ${context.agent_id}:`, spawnErr);
+  });
+
+  // Deliver prompt via stdin to avoid Windows cmd.exe newline-as-separator mangling.
+  proc.stdin!.write(prompt, "utf-8");
+  proc.stdin!.end();
+
   const liveIdentity: AgentIdentity = { ...identity, pid: proc.pid ?? 0 };
   await registerAgent(liveIdentity);
+
+  const taskLabel = context.task_file_path ?? "(no task)";
+  console.log(`[Agent] SPAWN  ${context.agent_id}  role=${context.role}  task=${taskLabel}`);
+
+  const logPath = path.resolve(`logs/${context.agent_id}.log`);
+  await fs.mkdir(path.resolve("logs"), { recursive: true });
+
+  const stdoutChunks: Buffer[] = [];
+  proc.stdout?.on("data", (chunk: Buffer) => {
+    stdoutChunks.push(chunk);
+    void fs.appendFile(logPath, chunk).catch(() => undefined);
+  });
+  proc.stderr?.on("data", (chunk: Buffer) => {
+    process.stderr.write(`[${context.agent_id}] ${chunk.toString()}`);
+    void fs.appendFile(logPath, chunk).catch(() => undefined);
+  });
 
   const startTime = Date.now();
 
   proc.on("exit", (code) => {
+    const durationMs = Date.now() - startTime;
     const resultBase = {
-      agent_id: agentId,
+      agent_id: context.agent_id,
       success: code === 0,
       exit_code: code ?? 1,
-      duration_ms: Date.now() - startTime,
+      duration_ms: durationMs,
     };
     const result: AgentResult = code !== 0
       ? { ...resultBase, error: `Exited with code ${String(code)}` }
       : resultBase;
 
-    void deregisterAgent(agentId).catch((err: unknown) => {
-      console.error(`[Spawner] Failed to deregister agent ${agentId}:`, err);
+    // Parse the JSON result and print a human-readable summary to the console.
+    const rawOut = Buffer.concat(stdoutChunks).toString("utf-8").trim();
+    if (code === 0 && rawOut.length > 0) {
+      try {
+        const parsed = JSON.parse(rawOut) as Record<string, unknown>;
+        const summary = typeof parsed["result"] === "string"
+          ? parsed["result"]
+          : "(no result text)";
+        const turns = typeof parsed["num_turns"] === "number" ? parsed["num_turns"] : "?";
+        const costUsd = typeof parsed["total_cost_usd"] === "number"
+          ? `$${(parsed["total_cost_usd"] as number).toFixed(4)}`
+          : "";
+        console.log(
+          `[Agent] DONE   ${context.agent_id}  turns=${String(turns)}  ${costUsd}  (${String(Math.round(durationMs / 1000))}s)\n` +
+          `        ${summary.replace(/\n/g, "\n        ")}`,
+        );
+      } catch {
+        console.log(`[Agent] DONE   ${context.agent_id}  (${String(Math.round(durationMs / 1000))}s) — could not parse result`);
+      }
+    } else if (code !== 0) {
+      console.error(`[Agent] FAIL   ${context.agent_id}  exit=${String(code)}  (${String(Math.round(durationMs / 1000))}s)`);
+    }
+
+    void deregisterAgent(context.agent_id).catch((err: unknown) => {
+      console.error(`[Spawner] Failed to deregister agent ${context.agent_id}:`, err);
     });
 
     if (options.onExit !== undefined) {
       void Promise.resolve(options.onExit(result)).catch((err: unknown) => {
-        console.error(`[Spawner] onExit callback error for ${agentId}:`, err);
+        console.error(`[Spawner] onExit callback error for ${context.agent_id}:`, err);
       });
     }
   });

@@ -31,6 +31,7 @@ export async function spawnCrafter(
     task_file_path: taskFilePath,
     project_path: projectPath,
     project_slug: projectSlug,
+    phase: "work",
     extra_context: crafterType,
   };
 
@@ -57,6 +58,7 @@ export async function spawnCrafterForRevision(
     task_file_path: taskFilePath,
     project_path: projectPath,
     project_slug: projectSlug,
+    phase: "revision",
     extra_context: `${crafterType}\n\n${revisionContext}`,
   };
 

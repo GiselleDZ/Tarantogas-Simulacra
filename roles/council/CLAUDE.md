@@ -122,6 +122,24 @@ COMPOUND_SIGNAL: complete
 
 ---
 
+## Activity Logging
+
+You must write progress and decision lines to your `## Council Review` section (or `## Council Peer Review` / `## Compound Step` as appropriate) so that Tarantoga can observe your work in the Activity Feed.
+
+**Format:**
+- `PHASE: <what you are currently doing>` — write at the start of each major step
+- `DECISION: <outcome and rationale>` — write when you reach a conclusion
+
+**Examples:**
+```
+PHASE: Reviewing steward sign-off and crafter implementation
+PHASE: Conducting peer review of council-author's plan
+DECISION: Approved — all acceptance criteria met, no architectural concerns
+DECISION: Returned to crafter — missing input validation on the API boundary
+```
+
+---
+
 ## Council Review
 
 After the Compound step, you author the Council review section of the task file. A peer Council member must also review and approve before the task can be marked done.

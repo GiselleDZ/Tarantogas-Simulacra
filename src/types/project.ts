@@ -3,6 +3,7 @@ export type ProjectStatus =
   | "onboarding_in_progress"
   | "kickoff_pending"
   | "kickoff_in_progress"
+  | "kickoff_failed"
   | "active"
   | "declined"
   | "archived";

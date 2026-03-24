@@ -27,3 +27,7 @@ Thumbs.db
 
 # MCP registry cache
 config/mcp-registry-cache.json
+
+/.claude
+/.mirdan
+/docs

@@ -32,6 +32,7 @@ export type {
   AgentCapabilities,
   AgentContext,
   AgentResult,
+  AgentCostEntry,
 } from "./agent.js";
 
 export type {

@@ -17,10 +17,11 @@ import { promises as fs } from "fs";
 import yaml from "js-yaml";
 import { Watcher } from "./io/watcher.js";
 import { readFile } from "./io/fileStore.js";
-import { applyPendingTransition } from "./workflow/taskPipeline.js";
+import { applyPendingTransition, scrubSentinels } from "./workflow/taskPipeline.js";
 import { DriftMonitor } from "./services/driftMonitor.js";
 import { recoverCrashedAgents } from "./recovery.js";
-import { runSchedulerCycle } from "./scheduler.js";
+import { readRegistry } from "./agents/spawner.js";
+import { runSchedulerCycle, MAX_CONCURRENT_AGENTS } from "./scheduler.js";
 import {
   spawnCouncilForCompound,
   spawnCouncilForReview,
@@ -30,6 +31,7 @@ import {
 import { spawnStewardForReview, spawnStewardForFinalSignOff } from "./agents/steward.js";
 import { spawnResearchAgentForTask } from "./agents/researchAgent.js";
 import { writeDriftLearning } from "./learning/councilLearning.js";
+import { McpProxyServer } from "./services/mcpProxy.js";
 import { ApprovalConsole } from "./io/approvalConsole.js";
 import { activateProject, setProjectStatus } from "./workflow/onboarding.js";
 import { activateKickoffTasks, cancelKickoffTasks } from "./workflow/taskCreation.js";
@@ -47,7 +49,23 @@ import { readMarkdownFile, writeMarkdownFile } from "./io/fileStore.js";
 // ── Configuration ─────────────────────────────────────────────────────────────
 
 interface OrchestratorConfig {
-  readonly orchestrator: { readonly poll_interval_ms: number };
+  readonly orchestrator: {
+    readonly poll_interval_ms: number;
+    readonly agent_timeout_ms?: number;
+  };
+  readonly agents?: {
+    readonly max_per_project?: number;
+    readonly heartbeat_timeout_ms?: number;
+  };
+  readonly mcp_proxy?: {
+    readonly enabled: boolean;
+    readonly port?: number;
+    readonly allowlist?: readonly string[];
+  };
+  readonly budget?: {
+    readonly per_project_usd?: number;
+    readonly global_usd?: number;
+  };
   readonly ui?: {
     readonly enabled: boolean;
     readonly port?: number;
@@ -96,8 +114,10 @@ async function loadRolesConfig(): Promise<RolesConfig> {
 // ── Task Recovery Helpers ─────────────────────────────────────────────────────
 
 /**
- * Reset a task to blocked after an agent failure.
- * Clears assigned_crafter so the scheduler can reassign after manual triage.
+ * Reset a task after an agent failure.
+ * The revert status and cleared field are determined from the task's current
+ * frontmatter status — the crashed agent's role alone is insufficient (e.g.
+ * a steward can be in steward_review or steward_final).
  */
 async function resetTaskToBlocked(filePath: string, agentId: string): Promise<void> {
   const doc = await readMarkdownFile<TaskFrontmatter>(filePath);
@@ -105,14 +125,33 @@ async function resetTaskToBlocked(filePath: string, agentId: string): Promise<vo
     console.error(`[Orchestrator] resetTaskToBlocked: could not read ${filePath}`);
     return;
   }
+
+  const currentStatus = doc.frontmatter.status;
+  let targetStatus: TaskStatus = "blocked";
+  const updates: Partial<TaskFrontmatter> = {};
+
+  if (currentStatus === "in_progress" || currentStatus === "assigned") {
+    targetStatus = "pending";
+    updates.assigned_crafter = null;
+  } else if (currentStatus === "steward_review" || currentStatus === "steward_final") {
+    targetStatus = currentStatus; // recoverOrphanedReviewTasks will respawn
+    updates.assigned_steward = null;
+  } else if (currentStatus === "council_review" || currentStatus === "compound") {
+    targetStatus = currentStatus;
+    updates.assigned_council_author = null;
+  } else if (currentStatus === "council_peer_review") {
+    targetStatus = currentStatus;
+    updates.assigned_council_peer = null;
+  }
+
   const updated: TaskFrontmatter = {
     ...doc.frontmatter,
-    status: "blocked",
-    assigned_crafter: null,
+    ...updates,
+    status: targetStatus,
     updated_at: new Date().toISOString(),
   };
-  await writeMarkdownFile(filePath, updated, doc.body);
-  console.warn(`[Orchestrator] Task ${filePath} reset to blocked after agent ${agentId} failure.`);
+  await writeMarkdownFile(filePath, updated, scrubSentinels(doc.body));
+  console.warn(`[Orchestrator] Task ${filePath} reset to ${targetStatus} after agent ${agentId} failure.`);
 }
 
 /**
@@ -128,6 +167,74 @@ function makeExitHandler(filePath: string) {
       await resetTaskToBlocked(filePath, result.agent_id);
     }
   };
+}
+
+// ── Review Orphan Recovery (Startup) ─────────────────────────────────────────
+
+const REVIEW_RECOVERY_STATUSES: readonly TaskStatus[] = [
+  "steward_review", "steward_final",
+  "council_review", "council_peer_review",
+];
+
+function getAssignedReviewAgent(fm: TaskFrontmatter): string | null {
+  if (fm.status === "steward_review" || fm.status === "steward_final") return fm.assigned_steward;
+  if (fm.status === "council_peer_review") return fm.assigned_council_peer;
+  return fm.assigned_council_author; // council_review
+}
+
+async function getAllTaskFilePaths(): Promise<string[]> {
+  const paths: string[] = [];
+  let projectDirs: string[];
+  try {
+    projectDirs = await fs.readdir("state/tasks");
+  } catch {
+    return [];
+  }
+  for (const projectDir of projectDirs) {
+    const projectTasksPath = path.join("state/tasks", projectDir);
+    let entries: string[];
+    try {
+      entries = await fs.readdir(projectTasksPath);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.endsWith(".md")) continue;
+      paths.push(path.join(projectTasksPath, entry));
+    }
+  }
+  return paths;
+}
+
+async function recoverOrphanedReviewTasks(
+  config: OrchestratorConfig,
+  rolesConfig: RolesConfig,
+  spawnDeps: { rolesConfig: RolesConfig; simulacraConfig: OrchestratorConfig },
+): Promise<void> {
+  const registry = await readRegistry();
+  const taskFiles = await getAllTaskFilePaths();
+  let spawned = 0;
+
+  for (const filePath of taskFiles) {
+    if (spawned >= MAX_CONCURRENT_AGENTS) break;
+
+    const doc = await readMarkdownFile<TaskFrontmatter>(filePath);
+    if (doc === null) continue;
+    const { frontmatter } = doc;
+
+    if (!REVIEW_RECOVERY_STATUSES.includes(frontmatter.status)) continue;
+
+    const assignedAgent = getAssignedReviewAgent(frontmatter);
+    if (assignedAgent !== null && registry[assignedAgent] !== undefined) continue; // alive
+
+    console.log(`[Recovery] Respawning ${frontmatter.status} agent for ${frontmatter.id}`);
+    await handleTransition(filePath, frontmatter.status, config, rolesConfig, spawnDeps);
+    spawned++;
+  }
+
+  if (spawned > 0) {
+    console.log(`[Recovery] Startup review recovery: ${spawned} agent(s) respawned`);
+  }
 }
 
 // ── Transition Handlers ───────────────────────────────────────────────────────
@@ -181,13 +288,15 @@ async function handleTransition(
       const stewardId = `steward-${randomUUID()}`;
       // Write assigned_steward to frontmatter so steward_final → compound can validate it
       const stewardDoc = await readMarkdownFile<TaskFrontmatter>(taskFilePath);
-      if (stewardDoc !== null) {
-        await writeMarkdownFile(taskFilePath, {
-          ...stewardDoc.frontmatter,
-          assigned_steward: stewardId,
-          updated_at: new Date().toISOString(),
-        }, stewardDoc.body);
+      if (stewardDoc === null) {
+        console.error(`[Orchestrator] steward_review: could not read ${taskFilePath} — aborting spawn`);
+        break;
       }
+      await writeMarkdownFile(taskFilePath, {
+        ...stewardDoc.frontmatter,
+        assigned_steward: stewardId,
+        updated_at: new Date().toISOString(),
+      }, stewardDoc.body);
       await spawnStewardForReview(
         taskFilePath,
         frontmatter.project,
@@ -289,28 +398,31 @@ async function handleDriftEvent(event: DriftEvent): Promise<void> {
 /** Per-task body offsets so we only emit new PHASE/DECISION lines, not historical ones. */
 const emittedBodyOffsets = new Map<string, number>();
 
-function statusToLogRole(status: TaskStatus): AgentLogRole {
-  if (status === "research_pending") return "research";
-  if (status === "research_review") return "council";
-  if (status === "in_progress" || status === "crafter_revision" || status === "assigned") {
-    return "crafter";
-  }
-  if (status === "steward_review" || status === "steward_final") return "steward";
-  if (status === "council_peer_review") return "council";
+/**
+ * Serializes watcher callbacks per file path.
+ * Chokidar can deliver multiple events for the same file within the
+ * awaitWriteFinish window. Without serialization, two concurrent callbacks
+ * can both enter handleTransition and spawn duplicate agents.
+ */
+const watcherCallbackChains = new Map<string, Promise<void>>();
+
+function sectionToLogRole(section: string): AgentLogRole {
+  const s = section.toLowerCase();
+  if (s.includes("crafter")) return "crafter";
+  if (s.includes("steward")) return "steward";
+  if (s.includes("council")) return "council";
+  if (s.includes("research")) return "research";
   return "council";
 }
 
-function getActiveAgentId(frontmatter: TaskFrontmatter, status: TaskStatus): string {
-  if (status === "in_progress" || status === "crafter_revision" || status === "assigned") {
-    return frontmatter.assigned_crafter ?? "unknown";
-  }
-  if (status === "steward_review" || status === "steward_final") {
-    return frontmatter.assigned_steward ?? "unknown";
-  }
-  if (status === "council_peer_review") {
-    return frontmatter.assigned_council_peer ?? "unknown";
-  }
-  return frontmatter.assigned_council_author ?? "unknown";
+function getAgentIdForLogSection(section: string, frontmatter: TaskFrontmatter): string {
+  const s = section.toLowerCase();
+  if (s.includes("crafter")) return frontmatter.assigned_crafter ?? "completed";
+  if (s.includes("steward")) return frontmatter.assigned_steward ?? "completed";
+  if (s.includes("council peer")) return frontmatter.assigned_council_peer ?? "completed";
+  if (s.includes("council")) return frontmatter.assigned_council_author ?? "completed";
+  if (s.includes("research")) return "research";
+  return frontmatter.assigned_council_author ?? "completed";
 }
 
 async function emitAgentLogLines(filePath: string): Promise<void> {
@@ -321,12 +433,10 @@ async function emitAgentLogLines(filePath: string): Promise<void> {
   const newContent = doc.body.slice(previousOffset);
   const lines = parseAgentLogLines(newContent);
 
-  if (lines.length > 0) {
-    const role = statusToLogRole(doc.frontmatter.status);
-    const agentId = getActiveAgentId(doc.frontmatter, doc.frontmatter.status);
-    for (const line of lines) {
-      printAgentLogLine(role, agentId, doc.frontmatter.id, line);
-    }
+  for (const line of lines) {
+    const role = sectionToLogRole(line.section);
+    const agentId = getAgentIdForLogSection(line.section, doc.frontmatter);
+    printAgentLogLine(role, agentId, doc.frontmatter.id, line);
   }
 
   emittedBodyOffsets.set(filePath, doc.body.length);
@@ -355,30 +465,42 @@ async function main(): Promise<void> {
   const config = await loadConfig();
   const rolesConfig = await loadRolesConfig();
 
+  // 1. Start MCP egress proxy (optional) — must be ready before crash recovery
+  //    respawns agents that need proxy routing.
+  let mcpProxy: McpProxyServer | null = null;
+  if (config.mcp_proxy?.enabled === true) {
+    mcpProxy = new McpProxyServer({
+      port: config.mcp_proxy.port ?? 8899,
+      allowlist: config.mcp_proxy.allowlist ?? [],
+    });
+    await mcpProxy.start();
+  }
+
   const spawnDeps = {
     rolesConfig,
     simulacraConfig: config,
+    ...(mcpProxy !== null ? { proxyToken: mcpProxy.token } : {}),
   };
 
-  // 1. Crash recovery
+  // 2. Crash recovery
   const crashed = await recoverCrashedAgents();
   if (crashed.length > 0) {
     console.warn(`[Orchestrator] Recovered ${crashed.length} crashed agent(s).`);
   }
+  await recoverOrphanedReviewTasks(config, rolesConfig, spawnDeps);
 
-  // 2. Start DriftMonitor
+  // 3. Start DriftMonitor
   const driftMonitor = new DriftMonitor({
     thresholds: config.drift.thresholds,
     onDriftEvent: handleDriftEvent,
   });
   driftMonitor.start();
 
-  // 3. Start approval console (+ optional UI server)
+  // 4. Start approval console (+ optional UI server)
   const uiEnabled = config.ui?.enabled === true;
 
   const handleApprovalDecided: import("./io/approvalConsole.js").ApprovalDecidedCallback =
-    async (approvalId, type, decision, project, relatedTaskRefs) => {
-      void approvalId;
+    async (_approvalId, type, decision, project, relatedTaskRefs) => {
       if (type === "project_assignment" && decision === "approved" && project !== null) {
         await activateProject(project);
       }
@@ -401,28 +523,60 @@ async function main(): Promise<void> {
     await startUIServer({ port: config.ui?.port ?? 4242, onApprovalDecided: handleApprovalDecided });
   }
 
-  // 4. Watch task files for sentinel signals and agent log lines
+  // 5. Watch task files for sentinel signals and agent log lines
   const taskWatcher = Watcher.create(
     ["state/tasks/**/*.md"],
-    async (event, filePath) => {
+    (event, filePath) => {
+      if (event === "unlink") {
+        // Clean up chains and offsets for deleted files
+        watcherCallbackChains.delete(filePath);
+        emittedBodyOffsets.delete(filePath);
+        return;
+      }
       if (event !== "change" && event !== "add") return;
 
-      try {
-        void emitAgentLogLines(filePath);
+      // Serialize callbacks per file — prevents concurrent handleTransition for the same task.
+      const prev = watcherCallbackChains.get(filePath) ?? Promise.resolve();
+      const next = prev.then(async () => {
+        try {
+          void emitAgentLogLines(filePath);
 
-        const newStatus = await applyPendingTransition(filePath);
-        if (newStatus !== null) {
-          console.log(`[Pipeline] ${filePath}: → ${newStatus}`);
-          await handleTransition(filePath, newStatus, config, rolesConfig, spawnDeps);
+          // Task file size monitoring: warn when a task file grows large.
+          // Section archival (in taskPipeline) handles files that exceed the per-section
+          // threshold, but this catches cases where the file grows before a transition fires.
+          const TASK_SIZE_WARN_BYTES = 50_000; // 50 KB
+          try {
+            const { size } = await fs.stat(filePath);
+            if (size > TASK_SIZE_WARN_BYTES) {
+              console.warn(
+                `[Orchestrator] Task file ${filePath} is ${Math.round(size / 1024)}KB — ` +
+                `may approach context limit. Archival will trigger on next transition.`,
+              );
+            }
+          } catch { /* file may not exist yet */ }
+
+          const newStatus = await applyPendingTransition(filePath);
+          if (newStatus !== null) {
+            console.log(`[Pipeline] ${filePath}: → ${newStatus}`);
+            await handleTransition(filePath, newStatus, config, rolesConfig, spawnDeps);
+            if (newStatus === "done" || newStatus === "cancelled") {
+              watcherCallbackChains.delete(filePath);
+            }
+          }
+        } catch (err: unknown) {
+          console.error(`[Orchestrator] Error processing ${filePath}:`, err);
         }
-      } catch (err: unknown) {
-        console.error(`[Orchestrator] Error processing ${filePath}:`, err);
-      }
+      });
+      watcherCallbackChains.set(filePath, next);
     },
   );
 
-  // 5. Scheduler poll
+  // 6. Scheduler poll
+  // Guard prevents overlapping cycles if a cycle takes longer than the poll interval.
+  let schedulerCycleInFlight = false;
   const schedulerInterval = setInterval(() => {
+    if (schedulerCycleInFlight) return;
+    schedulerCycleInFlight = true;
     void runSchedulerCycle({
       ...spawnDeps,
       onAgentResult: (result) => {
@@ -430,16 +584,25 @@ async function main(): Promise<void> {
           console.error(`[Scheduler] Agent ${result.agent_id} failed:`, result.error);
         }
       },
-    });
+      onOrphanedReviewTask: async (filePath, status) => {
+        await handleTransition(filePath, status, config, rolesConfig, spawnDeps);
+      },
+      ...(config.agents?.max_per_project !== undefined ? { maxAgentsPerProject: config.agents.max_per_project } : {}),
+      ...(config.agents?.heartbeat_timeout_ms !== undefined ? { heartbeatTimeoutMs: config.agents.heartbeat_timeout_ms } : {}),
+      ...(config.budget !== undefined ? { budget: config.budget } : {}),
+    })
+      .catch((err: unknown) => { console.error("[Scheduler] Cycle error:", err); })
+      .finally(() => { schedulerCycleInFlight = false; });
   }, config.orchestrator.poll_interval_ms);
 
-  // 6. Graceful shutdown
+  // 7. Graceful shutdown
   const shutdown = async (): Promise<void> => {
     console.log("[Orchestrator] Shutting down...");
     clearInterval(schedulerInterval);
     await taskWatcher.close();
     await approvalConsole.close();
     await driftMonitor.stop();
+    if (mcpProxy !== null) await mcpProxy.stop();
     process.exit(0);
   };
 

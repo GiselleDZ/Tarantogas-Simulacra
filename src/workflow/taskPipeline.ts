@@ -1,5 +1,5 @@
 import type { TaskStatus, TaskFrontmatter, TransitionRule } from "../types/index.js";
-import { readMarkdownFile, writeMarkdownFile } from "../io/fileStore.js";
+import { readMarkdownFile, writeMarkdownFile, writeFile } from "../io/fileStore.js";
 import { FileLock } from "../io/lock.js";
 
 // ── Transition Table ──────────────────────────────────────────────────────────
@@ -188,6 +188,60 @@ function sectionContainsSentinel(
   return sectionContent.includes(sentinel);
 }
 
+/**
+ * Clear a sentinel from the body so it cannot re-trigger a transition.
+ * Targets the last occurrence of the sentinel within the last occurrence
+ * of the matching section. Replaces the sentinel with a timestamped annotation
+ * that does not contain the sentinel as a substring, so future includes() checks
+ * will not match.
+ */
+function clearSentinel(body: string, section: string, sentinel: string): string {
+  // Find the last occurrence of the section header
+  let lastSectionStart = -1;
+  let searchFrom = 0;
+  while (true) {
+    const idx = body.indexOf(section, searchFrom);
+    if (idx === -1) break;
+    lastSectionStart = idx;
+    searchFrom = idx + 1;
+  }
+  if (lastSectionStart === -1) return body;
+
+  // Determine the end of the last section
+  const contentStart = lastSectionStart + section.length;
+  const nextHeaderMatch = body.slice(contentStart).match(/\n## /);
+  const sectionEnd =
+    nextHeaderMatch?.index !== undefined
+      ? contentStart + nextHeaderMatch.index
+      : body.length;
+
+  // Find the last occurrence of the sentinel within this section
+  const sectionSlice = body.slice(lastSectionStart, sectionEnd);
+  const lastSentinelIdx = sectionSlice.lastIndexOf(sentinel);
+  if (lastSentinelIdx === -1) return body;
+
+  const annotation = `[transitioned: ${new Date().toISOString()}]`;
+  const clearedSection =
+    sectionSlice.slice(0, lastSentinelIdx) +
+    annotation +
+    sectionSlice.slice(lastSentinelIdx + sentinel.length);
+
+  return body.slice(0, lastSectionStart) + clearedSection + body.slice(sectionEnd);
+}
+
+/**
+ * Scrub all known sentinels from the body, replacing each with a neutral annotation
+ * that does not contain the original sentinel as a substring.
+ * Called when resetting a task to prevent stale sentinels from re-triggering transitions.
+ */
+export function scrubSentinels(body: string): string {
+  let result = body;
+  for (const rule of TRANSITION_TABLE) {
+    result = result.replaceAll(rule.sentinel, "[sentinel cleared]");
+  }
+  return result;
+}
+
 // ── Transition Evaluation ─────────────────────────────────────────────────────
 
 export interface TransitionMatch {
@@ -232,6 +286,80 @@ export function evaluateTransitions(
   return null;
 }
 
+// ── Section Archival ──────────────────────────────────────────────────────────
+
+/**
+ * Minimum section content length (chars) before archival is triggered.
+ * Sections shorter than this are left in place — archiving tiny sections adds
+ * overhead with no benefit.
+ */
+const ARCHIVE_THRESHOLD_CHARS = 3_000;
+
+/**
+ * Collapse all occurrences of a section header into a single archived stub.
+ * Replaces every `## SectionName … (next ## header)` block with one entry
+ * pointing at the archive file.
+ */
+function collapseSectionToStub(body: string, sectionHeader: string, stub: string): string {
+  const firstIdx = body.indexOf(sectionHeader);
+  if (firstIdx === -1) return body;
+
+  // Find the end of the last occurrence of this section
+  let lastOccurrenceEnd = firstIdx; // will be updated in the loop
+  let searchFrom = 0;
+  while (true) {
+    const idx = body.indexOf(sectionHeader, searchFrom);
+    if (idx === -1) break;
+    const contentStart = idx + sectionHeader.length;
+    const nextMatch = body.slice(contentStart).match(/\n## /);
+    lastOccurrenceEnd = nextMatch?.index !== undefined
+      ? contentStart + nextMatch.index
+      : body.length;
+    searchFrom = idx + 1;
+  }
+
+  return body.slice(0, firstIdx) + sectionHeader + stub + body.slice(lastOccurrenceEnd);
+}
+
+/**
+ * If the completed section is large, archive its full content to state/archive/
+ * and replace it with a one-line stub in the task body.
+ * Returns the (possibly modified) body.
+ */
+async function maybeArchiveSection(
+  taskId: string,
+  sectionHeader: string,
+  body: string,
+): Promise<string> {
+  const allContent = extractSection(body, sectionHeader);
+  if (allContent.length < ARCHIVE_THRESHOLD_CHARS) return body;
+
+  const sectionSlug = sectionHeader
+    .replace(/^#+\s*/, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+$/, "");
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const archivePath = `state/archive/${taskId}/${sectionSlug}-${ts}.md`;
+
+  await writeFile(
+    archivePath,
+    [
+      `# Archive: ${sectionHeader.replace(/^#+\s*/, "")}`,
+      "",
+      `**Task:** \`${taskId}\`  **Archived:** ${new Date().toISOString()}`,
+      "",
+      "---",
+      "",
+      allContent.trim(),
+      "",
+    ].join("\n"),
+  );
+
+  const stub = `\n\n> *Archived at ${new Date().toISOString()} — [full content](../../${archivePath})*\n`;
+  return collapseSectionToStub(body, sectionHeader, stub);
+}
+
 // ── Orchestrator API ──────────────────────────────────────────────────────────
 
 /**
@@ -258,7 +386,16 @@ export async function applyPendingTransition(
       updated_at: new Date().toISOString(),
     };
 
-    await writeMarkdownFile(taskFilePath, updatedFrontmatter, body);
+    const clearedBody = clearSentinel(body, match.rule.section, match.rule.sentinel);
+
+    // Archive the completed section if it has grown large
+    const archivedBody = await maybeArchiveSection(
+      frontmatter.id,
+      match.rule.section,
+      clearedBody,
+    );
+
+    await writeMarkdownFile(taskFilePath, updatedFrontmatter, archivedBody);
 
     return match.newStatus;
   });

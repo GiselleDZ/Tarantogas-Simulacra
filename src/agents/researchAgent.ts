@@ -36,6 +36,7 @@ export async function spawnResearchAgentForTask(
     agent_id: agentId,
     task_file_path: taskFilePath,
     ...(projectSlug !== null ? { project_slug: projectSlug } : {}),
+    phase: "research",
     extra_context: [
       `Read the ## Council Research section of your task file to understand the research question.`,
       ``,

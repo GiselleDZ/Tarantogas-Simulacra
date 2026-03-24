@@ -43,6 +43,22 @@ If your estimate is borderline (150,000–200,000 tokens), acknowledge the risk 
 
 ---
 
+## Activity Logging
+
+Write progress lines to your `## Research Output` section so your work is visible in the Activity Feed.
+
+**Format:**
+- `PHASE: <what you are researching or have found>` — at each significant step
+
+**Examples:**
+```
+PHASE: Scanning existing codebase for authentication patterns
+PHASE: Cross-referencing three external sources on JWT expiry strategies
+PHASE: Research complete — findings written to Research Output section
+```
+
+---
+
 ## Task-Based Research Flow
 
 When spawned for a task in `research_pending` state:

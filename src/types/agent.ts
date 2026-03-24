@@ -37,6 +37,13 @@ export interface AgentContext {
   readonly project_path?: string;
   readonly project_slug?: string;
   readonly extra_context?: string;
+  /**
+   * Phase identifier for phase-scoped role prompts.
+   * When set, the spawner looks for `roles/{role}/phases/{phase}.md` and
+   * uses it instead of the full `roles/{role}/CLAUDE.md` if the file exists.
+   * Falls back to the full CLAUDE.md if no phase file is found.
+   */
+  readonly phase?: string;
 }
 
 /** Result returned when an agent completes */
@@ -46,4 +53,16 @@ export interface AgentResult {
   readonly exit_code: number;
   readonly duration_ms: number;
   readonly error?: string;
+  readonly timed_out?: boolean;
+  readonly cost_usd?: number;
+}
+
+/** A single agent cost entry written to state/projects/{slug}/costs.jsonl */
+export interface AgentCostEntry {
+  readonly agent_id: string;
+  readonly role: AgentRole;
+  readonly task_id?: string;
+  readonly cost_usd: number;
+  readonly duration_ms: number;
+  readonly timestamp: string;
 }

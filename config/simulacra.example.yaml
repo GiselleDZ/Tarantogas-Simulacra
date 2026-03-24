@@ -10,6 +10,42 @@ orchestrator:
   # Retention: tasks in "done" or "cancelled" are archived after this many days.
   archive_after_days: 30
 
+  # Kill agents that run longer than this many milliseconds. 0 = no timeout.
+  agent_timeout_ms: 600000  # 10 minutes
+
+# ── Agent limits ──────────────────────────────────────────────────────────────
+agents:
+  # Maximum concurrent agents per project slug. Prevents one project from
+  # monopolising all 8 agent slots and starving others.
+  max_per_project: 3
+
+  # Milliseconds of log silence before an agent is flagged as potentially stuck.
+  # The scheduler logs a warning — it does not kill the agent (the timeout above handles that).
+  heartbeat_timeout_ms: 600000  # 10 minutes
+
+# ── MCP Egress Proxy ──────────────────────────────────────────────────────────
+# Optional. When enabled, all MCP server processes route HTTP/HTTPS traffic
+# through a local proxy that enforces a domain allowlist.
+# Pure Node.js — works on macOS, Linux, and Windows.
+mcp_proxy:
+  enabled: false
+  port: 8899
+  # Domains MCP servers are permitted to reach. Supports wildcard prefix (*.domain.com).
+  allowlist:
+    - "api.anthropic.com"
+    - "*.upstash.io"
+    - "api.search.brave.com"
+
+# ── Cost Budgets ───────────────────────────────────────────────────────────────
+# Optional. When set, the scheduler will block new agent spawns once a budget
+# limit is reached, and log a warning. The system never kills running agents —
+# only prevents new ones from starting.
+budget:
+  # Maximum total spend across all projects. Comment out to disable.
+  # global_usd: 50.00
+  # Maximum spend per project slug. Comment out to disable.
+  # per_project_usd: 10.00
+
 # ── Anthropic API ─────────────────────────────────────────────────────────────
 anthropic:
   # Your Anthropic API key. Can also be set via ANTHROPIC_API_KEY env var.

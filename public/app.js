@@ -51,7 +51,21 @@ function switchTab(name) {
   const pane = document.getElementById(`tab-${name}`);
   pane.removeAttribute('hidden');
   pane.style.display = PANE_DISPLAY[name] ?? 'flex';
-  if (name === 'activity') renderActivityFeed();
+  if (name === 'activity') {
+    renderActivityFeed();
+    // If WS snapshot arrived before chokidar's initial scan, fall back to REST
+    if (activityEvents.length === 0) {
+      fetch('/api/activity')
+        .then((r) => r.json())
+        .then((events) => {
+          if (events.length > 0 && activityEvents.length === 0) {
+            activityEvents.push(...events);
+            renderActivityFeed();
+          }
+        })
+        .catch(() => { /* silent — WS will bring events when available */ });
+    }
+  }
   if (name === 'projects' && !projectsLoaded) loadProjects();
 }
 
@@ -413,6 +427,7 @@ $('autoscroll').addEventListener('change', (e) => {
 // ── Projects Tab ──────────────────────────────────────────────────────────────
 const projects = new Map();      // slug → ProjectRegistry
 const projectTasks = new Map();  // taskId → TaskRecord (selected project)
+const projectCosts = new Map();  // slug → { total_cost_usd, entries }
 let selectedProjectSlug = null;
 let selectedTaskId = null;
 let projectsLoaded = false;
@@ -467,10 +482,15 @@ async function selectProject(slug) {
   view.removeAttribute('hidden');
   view.style.display = 'flex';
 
-  const res = await fetch(`/api/projects/${slug}/tasks`);
-  const list = await res.json();
+  const [tasksRes, costsRes] = await Promise.all([
+    fetch(`/api/projects/${slug}/tasks`),
+    fetch(`/api/projects/${slug}/costs`),
+  ]);
+  const list = await tasksRes.json();
+  const costs = await costsRes.json();
   projectTasks.clear();
   for (const t of list) projectTasks.set(t.frontmatter.id, t);
+  projectCosts.set(slug, costs);
 
   renderProjectHeader();
   renderPipeline();
@@ -480,12 +500,16 @@ async function selectProject(slug) {
 function renderProjectHeader() {
   const p = projects.get(selectedProjectSlug);
   if (!p) return;
+  const costs = projectCosts.get(selectedProjectSlug);
+  const costStr = costs && costs.total_cost_usd > 0
+    ? `&nbsp;·&nbsp; $${costs.total_cost_usd.toFixed(4)} spent`
+    : '';
   $('project-header').innerHTML = `
     <div class="project-title">${escapeHtml(p.name)}</div>
     <div class="project-subtitle">
       <span class="proj-status-${p.status}">${escapeHtml(p.status.replace(/_/g, ' '))}</span>
       &nbsp;·&nbsp; ${escapeHtml(p.crafter_types.join(', '))}
-      &nbsp;·&nbsp; ${projectTasks.size} task${projectTasks.size !== 1 ? 's' : ''}
+      &nbsp;·&nbsp; ${projectTasks.size} task${projectTasks.size !== 1 ? 's' : ''}${costStr}
     </div>
   `;
 }
@@ -691,6 +715,11 @@ function connectWs() {
         renderPipeline();
         if (selectedTaskId === t.frontmatter.id) selectTask(t.frontmatter.id);
       }
+    } else if (msg.type === 'projects_update') {
+      projects.clear();
+      for (const p of msg.projects) projects.set(p.slug, p);
+      if (projectsLoaded) renderProjectList();
+      if (selectedProjectSlug) renderProjectHeader();
     }
   });
 }

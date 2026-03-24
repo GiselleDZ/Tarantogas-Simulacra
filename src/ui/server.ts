@@ -7,7 +7,7 @@
 import http from "http";
 import path from "path";
 import express from "express";
-import type { ErrorRequestHandler } from "express";
+import type { ErrorRequestHandler, Request, Response, NextFunction } from "express";
 import { WebSocketServer, WebSocket } from "ws";
 import { ApprovalWatcher } from "./approvalWatcher.js";
 import { ActivityWatcher } from "./activityWatcher.js";
@@ -15,10 +15,13 @@ import { TaskWatcher } from "./taskWatcher.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
 import { createActivityRoutes } from "./routes/activity.js";
 import { createProjectRoutes } from "./routes/projects.js";
+import { Watcher } from "../io/watcher.js";
+import { listProjects } from "../workflow/onboarding.js";
 import type { ApprovalRecord } from "./approvalWatcher.js";
 import type { ActivityEvent } from "./activityWatcher.js";
 import type { TaskRecord } from "./taskWatcher.js";
 import type { ApprovalDecidedCallback } from "../io/approvalConsole.js";
+import type { ProjectRegistry } from "../types/index.js";
 
 export interface UIServerOptions {
   readonly port: number;
@@ -30,13 +33,31 @@ type WsMessage =
   | { type: "approval_update";    approval: ApprovalRecord }
   | { type: "activity_snapshot";  events: ActivityEvent[] }
   | { type: "activity_lines";     events: ActivityEvent[] }
-  | { type: "task_update";        task: TaskRecord };
+  | { type: "task_update";        task: TaskRecord }
+  | { type: "projects_update";    projects: ProjectRegistry[] };
 
 function broadcast(clients: Set<WebSocket>, msg: WsMessage): void {
   const payload = JSON.stringify(msg);
   for (const client of clients) {
     if (client.readyState === WebSocket.OPEN) client.send(payload);
   }
+}
+
+/**
+ * Reject non-localhost Origins on mutating requests to prevent CSRF from
+ * other origins. Only applied to non-GET/HEAD requests on the /api prefix.
+ */
+function requireLocalOrigin(req: Request, res: Response, next: NextFunction): void {
+  const origin = req.headers.origin ?? req.headers.referer ?? "";
+  if (
+    origin !== "" &&
+    !origin.startsWith("http://localhost") &&
+    !origin.startsWith("http://127.0.0.1")
+  ) {
+    res.status(403).json({ error: "Forbidden: cross-origin requests not allowed" });
+    return;
+  }
+  next();
 }
 
 export async function startUIServer(options: UIServerOptions): Promise<void> {
@@ -58,10 +79,31 @@ export async function startUIServer(options: UIServerOptions): Promise<void> {
     broadcast(clients, { type: "task_update", task });
   });
 
+  // Watch the project registry and push updates to all connected clients
+  Watcher.create(
+    ["state/projects/registry.json"],
+    () => {
+      listProjects().then((projects) => {
+        broadcast(clients, { type: "projects_update", projects });
+      }).catch((err: unknown) => {
+        console.error("[UI] Failed to read projects registry on change:", err);
+      });
+    },
+  );
+
   // Request logging for API calls
   app.use((req, _res, next) => {
     if (req.path.startsWith("/api")) console.log(`[UI] ${req.method} ${req.path}`);
     next();
+  });
+
+  // Reject mutating requests from non-localhost origins
+  app.use("/api", (req: Request, res: Response, next: NextFunction) => {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      requireLocalOrigin(req, res, next);
+    } else {
+      next();
+    }
   });
 
   app.use("/api/approvals", createApprovalRoutes(watcher, options.onApprovalDecided));
@@ -93,7 +135,7 @@ export async function startUIServer(options: UIServerOptions): Promise<void> {
     ws.on("error", () => { clients.delete(ws); });
   });
 
-  await new Promise<void>((resolve) => { server.listen(options.port, resolve); });
+  await new Promise<void>((resolve) => { server.listen(options.port, "127.0.0.1", resolve); });
   console.log(`[UI] Simulacra dashboard: http://localhost:${options.port}`);
 }
 

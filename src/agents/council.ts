@@ -39,6 +39,7 @@ export async function spawnCouncilForCompound(
     task_file_path: taskFilePath,
     project_path: projectPath,
     project_slug: projectSlug,
+    phase: "compound",
     extra_context: `You are conducting the Compound step interview for this task. Read the task file, review the Crafter's work, and conduct a structured interview. Record the interview in state/drift/interviews/ and write your findings to the Compound Step section of the task file. When done, write: COMPOUND_SIGNAL: complete`,
   };
 
@@ -62,6 +63,7 @@ export async function spawnCouncilForReview(
     task_file_path: taskFilePath,
     project_path: projectPath,
     project_slug: projectSlug,
+    phase: "council-review",
     extra_context: `You are the Council author reviewer for this task. Review the completed work, the Steward sign-off, and the Compound step record. Write your Council Review section and signal: COUNCIL_SIGNAL: APPROVED or COUNCIL_SIGNAL: REVISION_REQUIRED`,
   };
 
@@ -85,6 +87,7 @@ export async function spawnCouncilForPeerReview(
     task_file_path: taskFilePath,
     project_path: projectPath,
     project_slug: projectSlug,
+    phase: "peer-review",
     extra_context: `You are the Council peer reviewer for this task. A peer Council member has already reviewed and approved. Independently review the work. Write your Council Peer Review section and signal: COUNCIL_SIGNAL: APPROVED or COUNCIL_SIGNAL: REVISION_REQUIRED`,
   };
 
@@ -109,6 +112,7 @@ export async function spawnCouncilForResearchReview(
     task_file_path: taskFilePath,
     project_path: projectPath,
     project_slug: projectSlug,
+    phase: "research-review",
     extra_context: `You are reviewing the research output for this task. Read the ## Research Output section, analyse the findings, and write your review and any recommendations to ## Council Research Review. Update the task frontmatter field research_doc_refs with paths to relevant research documents the Crafter should read. When satisfied, write: RESEARCH_SIGNAL: approved`,
   };
 
@@ -133,6 +137,7 @@ export async function spawnCouncilForKickoff(
     agent_id: councilId,
     project_path: projectPath,
     project_slug: projectSlug,
+    phase: "kickoff",
     extra_context: `You have no task file — your entry point is the ## Project Kickoff section of your CLAUDE.md role file.\nProject slug: ${projectSlug}\nProject path: ${projectPath}\nFollow the Project Kickoff workflow exactly as written in your role file.`,
   };
 

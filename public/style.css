@@ -19,7 +19,18 @@
   --font: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
 }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent-bright) var(--bg-start);
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-start); border: 1px solid rgba(204,82,0,0.5); }
+::-webkit-scrollbar-thumb { background: var(--accent-bright); border-radius: 2px; }
+::-webkit-scrollbar-corner { background: var(--bg-start); }
 
 body {
   background: linear-gradient(150deg, var(--bg-start), var(--bg-end));
@@ -139,8 +150,6 @@ main { height: calc(100vh - 48px); }
   flex-direction: column;
   gap: 4px;
 }
-#queue::-webkit-scrollbar { width: 3px; }
-#queue::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .empty-state {
   color: var(--text-faint);
@@ -200,8 +209,6 @@ main { height: calc(100vh - 48px); }
   flex-direction: column;
   gap: 14px;
 }
-#detail::-webkit-scrollbar { width: 3px; }
-#detail::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 #detail-content { display: flex; flex-direction: column; gap: 14px; }
 
@@ -388,8 +395,6 @@ main { height: calc(100vh - 48px); }
   font-family: var(--font);
   font-size: 11px;
 }
-#activity-feed::-webkit-scrollbar { width: 3px; }
-#activity-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .activity-row {
   display: flex;
@@ -473,8 +478,6 @@ main { height: calc(100vh - 48px); }
   flex-direction: column;
   gap: 4px;
 }
-#projects-list::-webkit-scrollbar { width: 3px; }
-#projects-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .project-card {
   padding: 8px 10px;
@@ -531,8 +534,6 @@ main { height: calc(100vh - 48px); }
   align-items: flex-start;
   min-height: 0;
 }
-#task-pipeline::-webkit-scrollbar { height: 3px; }
-#task-pipeline::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 .pipeline-lane {
   width: 200px;
@@ -631,8 +632,6 @@ main { height: calc(100vh - 48px); }
   word-break: break-word;
   line-height: 1.65;
 }
-#task-detail-body::-webkit-scrollbar { width: 3px; }
-#task-detail-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 #task-detail-actions {
   display: flex;

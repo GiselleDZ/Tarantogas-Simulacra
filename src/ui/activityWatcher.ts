@@ -6,7 +6,7 @@ import { Watcher } from "../io/watcher.js";
 import { readMarkdownFile } from "../io/fileStore.js";
 import { parseAgentLogLines } from "../io/agentLog.js";
 import type { AgentLogRole } from "../io/agentLog.js";
-import type { TaskFrontmatter, TaskStatus } from "../types/index.js";
+import type { TaskFrontmatter } from "../types/index.js";
 
 export type { AgentLogRole };
 
@@ -25,25 +25,23 @@ const RING_BUFFER_SIZE = 500;
 
 let eventCounter = 0;
 
-function statusToRole(status: TaskStatus): AgentLogRole {
-  if (status === "research_pending") return "research";
-  if (status === "in_progress" || status === "crafter_revision" || status === "assigned") return "crafter";
-  if (status === "steward_review" || status === "steward_final") return "steward";
-  return "council";
+function sectionToRole(section: string): AgentLogRole {
+  const s = section.toLowerCase();
+  if (s.includes("crafter")) return "crafter";
+  if (s.includes("steward")) return "steward";
+  if (s.includes("council")) return "council";
+  if (s.includes("research")) return "research";
+  return "council"; // safe default for unknown sections
 }
 
-function getAgentId(frontmatter: TaskFrontmatter, status: TaskStatus): string {
-  if (status === "in_progress" || status === "crafter_revision" || status === "assigned") {
-    return frontmatter.assigned_crafter ?? "unknown";
-  }
-  if (status === "steward_review" || status === "steward_final") {
-    return frontmatter.assigned_steward ?? "unknown";
-  }
-  if (status === "council_peer_review") {
-    return frontmatter.assigned_council_peer ?? "unknown";
-  }
-  if (status === "research_pending") return "research";
-  return frontmatter.assigned_council_author ?? "unknown";
+function getAgentIdForSection(section: string, frontmatter: TaskFrontmatter): string {
+  const s = section.toLowerCase();
+  if (s.includes("crafter")) return frontmatter.assigned_crafter ?? "completed";
+  if (s.includes("steward")) return frontmatter.assigned_steward ?? "completed";
+  if (s.includes("council peer")) return frontmatter.assigned_council_peer ?? "completed";
+  if (s.includes("council")) return frontmatter.assigned_council_author ?? "completed";
+  if (s.includes("research")) return "research";
+  return frontmatter.assigned_council_author ?? "completed";
 }
 
 export class ActivityWatcher {
@@ -81,16 +79,14 @@ export class ActivityWatcher {
     if (lines.length === 0) return;
 
     const { frontmatter } = doc;
-    const role = statusToRole(frontmatter.status);
-    const agentId = getAgentId(frontmatter, frontmatter.status);
     const timestamp = new Date().toISOString();
 
     const events: ActivityEvent[] = lines.map((line) => ({
       id: `evt-${++eventCounter}`,
       taskId: frontmatter.id,
       project: frontmatter.project,
-      role,
-      agentId,
+      role: sectionToRole(line.section),
+      agentId: getAgentIdForSection(line.section, frontmatter),
       type: line.type,
       message: line.message,
       timestamp,

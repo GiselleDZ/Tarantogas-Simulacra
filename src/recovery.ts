@@ -8,12 +8,13 @@
  */
 import { readFile, writeFile } from "./io/fileStore.js";
 import { readMarkdownFile, writeMarkdownFile } from "./io/fileStore.js";
-import { createApproval } from "./workflow/approvalQueue.js";
-import type { LiveAgentRegistry, TaskFrontmatter } from "./types/index.js";
+import { scrubSentinels } from "./workflow/taskPipeline.js";
+import type { LiveAgentRegistry, TaskFrontmatter, TaskStatus, AgentRole } from "./types/index.js";
 
 const REGISTRY_PATH = "state/agents/live.json";
 
 function isProcessRunning(pid: number): boolean {
+  if (pid <= 0) return false; // invalid PID — treat as dead
   try {
     // Signal 0 checks if the process exists without sending a signal
     process.kill(pid, 0);
@@ -42,7 +43,7 @@ export async function recoverCrashedAgents(): Promise<string[]> {
 
     // If the agent was working on a task, mark it blocked
     if (identity.task_id !== undefined) {
-      await markTaskBlocked(identity.task_id, agentId);
+      await markTaskBlocked(identity.task_id, agentId, identity.role);
     }
   }
 
@@ -65,47 +66,69 @@ export async function recoverCrashedAgents(): Promise<string[]> {
 async function markTaskBlocked(
   taskFilePath: string,
   crashedAgentId: string,
+  role: AgentRole,
 ): Promise<void> {
   const doc = await readMarkdownFile<TaskFrontmatter>(taskFilePath);
   if (doc === null) return;
 
+  const currentStatus = doc.frontmatter.status;
+  let targetStatus: TaskStatus;
+  const updates: Partial<TaskFrontmatter> = {};
+
+  // Determine the correct revert status and which assignment field to clear
+  // based on the task's current status — role alone is insufficient for
+  // distinguishing e.g. steward_review from steward_final.
+  if (currentStatus === "in_progress" || currentStatus === "assigned") {
+    targetStatus = "pending";
+    updates.assigned_crafter = null;
+  } else if (currentStatus === "steward_review" || currentStatus === "steward_final") {
+    targetStatus = currentStatus; // keep status; recoverOrphanedReviewTasks respawns
+    updates.assigned_steward = null;
+  } else if (currentStatus === "council_review" || currentStatus === "compound") {
+    targetStatus = currentStatus;
+    updates.assigned_council_author = null;
+  } else if (currentStatus === "council_peer_review") {
+    targetStatus = currentStatus;
+    updates.assigned_council_peer = null;
+  } else {
+    targetStatus = "blocked";
+  }
+
   const updated: TaskFrontmatter = {
     ...doc.frontmatter,
-    status: "pending",
-    assigned_crafter: null,
+    ...updates,
+    status: targetStatus,
     updated_at: new Date().toISOString(),
   };
 
+  const isCrafter = role === "crafter";
   const appendedBody =
-    doc.body +
-    `\n\n## Recovery Note\n\nTask re-queued after crash of agent \`${crashedAgentId}\`. Scheduler will reassign.\n`;
+    scrubSentinels(doc.body) +
+    `\n\n## Recovery Note\n\nTask reset after crash of agent \`${crashedAgentId}\` (role: ${role}). ` +
+    (isCrafter ? "Scheduler will reassign." : "Agent will be respawned by recovery.") + "\n";
 
-  await writeMarkdownFile(
-    taskFilePath,
-    updated,
-    appendedBody,
-  );
+  await writeMarkdownFile(taskFilePath, updated, appendedBody);
 }
 
 async function notifyCrashRecovery(crashedAgentIds: string[]): Promise<void> {
-  const body = [
-    "## Crash Recovery Report",
-    "",
-    `${crashedAgentIds.length} agent(s) were found crashed on orchestrator startup.`,
-    "",
-    "**Crashed agents:**",
-    ...crashedAgentIds.map((id) => `- \`${id}\``),
-    "",
-    "Their tasks have been marked `blocked`. Review and reassign as needed.",
-  ].join("\n");
-
-  await createApproval({
-    type: "task_cancellation",
-    createdBy: "orchestrator",
-    project: null,
-    councilRecommendation: "needs_research",
-    relatedTaskRefs: [],
-    body,
-    urgent: true,
-  });
+  // Write directly to Tarantoga's inbox — task_cancellation approvals are
+  // auto-approved and would be silently dismissed, hiding crash events.
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const notifPath = `state/inbox/tarantoga/unread/crash-recovery-${timestamp}.md`;
+  await writeFile(
+    notifPath,
+    [
+      "## Crash Recovery Report",
+      "",
+      `${crashedAgentIds.length} agent(s) were found crashed on orchestrator startup.`,
+      "",
+      "**Crashed agents:**",
+      ...crashedAgentIds.map((id) => `- \`${id}\``),
+      "",
+      "Their tasks have been reset. Crafters → pending (scheduler will reassign). " +
+        "Other roles → same review status (agent will be respawned by recovery).",
+      "",
+      `**Detected at:** ${new Date().toISOString()}`,
+    ].join("\n"),
+  );
 }

@@ -16,7 +16,7 @@ import { FileLock } from "../../io/lock.js";
 import { readMarkdownFile, writeMarkdownFile } from "../../io/fileStore.js";
 import { listProjects, onboardProject } from "../../workflow/onboarding.js";
 import type { TaskWatcher } from "../taskWatcher.js";
-import type { TaskFrontmatter } from "../../types/index.js";
+import type { TaskFrontmatter, AgentCostEntry } from "../../types/index.js";
 
 const OnboardSchema = z.object({
   name: z.string().min(1).max(80),
@@ -105,6 +105,23 @@ export function createProjectRoutes(taskWatcher: TaskWatcher): Router {
     })
       .then(() => res.json({ ok: true }))
       .catch(next);
+  });
+
+  // GET /api/projects/:slug/costs
+  router.get("/:slug/costs", (req, res, next) => {
+    const slug = req.params["slug"];
+    if (!isValidSlug(slug)) { res.status(400).json({ error: "Invalid slug" }); return; }
+    const costsPath = path.resolve(`state/projects/${slug}/costs.jsonl`);
+    fs.readFile(costsPath, "utf-8")
+      .then((raw) => {
+        const entries: AgentCostEntry[] = raw
+          .split("\n")
+          .filter((l) => l.trim().length > 0)
+          .map((l) => JSON.parse(l) as AgentCostEntry);
+        const total_cost_usd = entries.reduce((sum, e) => sum + e.cost_usd, 0);
+        res.json({ total_cost_usd, entries });
+      })
+      .catch(() => res.json({ total_cost_usd: 0, entries: [] }));
   });
 
   // POST /api/projects/:slug/tasks/:taskId/unblock

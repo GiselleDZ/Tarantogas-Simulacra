@@ -26,29 +26,38 @@ export type AgentLogLineType = "PHASE" | "DECISION";
 export interface AgentLogLine {
   readonly type: AgentLogLineType;
   readonly message: string;
+  readonly section: string; // the ## heading active when the line was written
 }
 
 // ── Parsing ───────────────────────────────────────────────────────────────────
 
 /**
  * Extract all PHASE: and DECISION: lines from a block of task body content.
+ * Tracks the active ## section heading so callers can derive role from section name.
  * Designed to be called on incremental content (new body appended since last scan).
  */
 export function parseAgentLogLines(content: string): AgentLogLine[] {
   const result: AgentLogLine[] = [];
+  let currentSection = "";
 
   for (const raw of content.split("\n")) {
     const line = raw.trim();
 
+    const sectionMatch = /^##\s+(.+)$/.exec(line);
+    if (sectionMatch !== null) {
+      currentSection = sectionMatch[1]!.trim();
+      continue;
+    }
+
     const phaseMatch = /^PHASE:\s*(.+)$/.exec(line);
     if (phaseMatch !== null) {
-      result.push({ type: "PHASE", message: phaseMatch[1]!.trim() });
+      result.push({ type: "PHASE", message: phaseMatch[1]!.trim(), section: currentSection });
       continue;
     }
 
     const decisionMatch = /^DECISION:\s*(.+)$/.exec(line);
     if (decisionMatch !== null) {
-      result.push({ type: "DECISION", message: decisionMatch[1]!.trim() });
+      result.push({ type: "DECISION", message: decisionMatch[1]!.trim(), section: currentSection });
     }
   }
 

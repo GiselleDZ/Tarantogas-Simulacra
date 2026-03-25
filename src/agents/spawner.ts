@@ -65,7 +65,7 @@ async function deregisterAgent(agentId: string): Promise<void> {
 }
 
 /** Resolve the permitted MCP list and configs for a given role. */
-function resolveCapabilities(
+export function resolveCapabilities(
   role: AgentRole,
   crafterType: string | undefined,
   rolesConfig: RolesConfig,
@@ -121,7 +121,7 @@ const RESERVED_PROXY_KEYS = new Set([
   "PROXY_AUTHORIZATION",
 ]);
 
-function buildMcpConfigJson(
+export function buildMcpConfigJson(
   mcpConfigs: Record<string, McpServerConfig>,
   proxyUrl?: string,
   proxyToken?: string,
@@ -162,7 +162,7 @@ function buildMcpConfigJson(
  * Build the initial prompt that tells the agent what to do.
  * Since we use --print (non-interactive), this is the agent's entry point.
  */
-function buildInitialPrompt(context: AgentContext): string {
+export function buildInitialPrompt(context: AgentContext): string {
   const lines: string[] = [
     `You are agent ${context.agent_id}, role: ${context.role}.`,
   ];
@@ -224,7 +224,7 @@ const BLOCKED_ENV_PATTERNS: readonly RegExp[] = [
   /^MISTRAL_API_KEY$/,
 ];
 
-function buildChildEnv(): NodeJS.ProcessEnv {
+export function buildChildEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) {
     if (BLOCKED_ENV_PATTERNS.some((pattern) => pattern.test(key))) {

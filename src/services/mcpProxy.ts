@@ -42,7 +42,7 @@ const HOP_BY_HOP_HEADERS: readonly string[] = [
  * Wildcard entries like "*.upstash.io" match subdomains only — the apex
  * domain "upstash.io" is NOT matched. Add it explicitly if needed.
  */
-function isAllowed(hostname: string, allowlist: readonly string[]): boolean {
+export function isAllowed(hostname: string, allowlist: readonly string[]): boolean {
   for (const pattern of allowlist) {
     if (pattern.startsWith("*.")) {
       if (hostname.endsWith(pattern.slice(1))) return true;
@@ -54,7 +54,7 @@ function isAllowed(hostname: string, allowlist: readonly string[]): boolean {
 }
 
 /** Returns true if the IP is in a private, loopback, or link-local range. */
-function isPrivateIp(ip: string): boolean {
+export function isPrivateIp(ip: string): boolean {
   // IPv4
   if (ip === "0.0.0.0") return true;
   if (ip.startsWith("127.")) return true;       // 127.0.0.0/8

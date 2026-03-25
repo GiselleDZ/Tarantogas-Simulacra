@@ -38,7 +38,7 @@ const DEFAULT_THRESHOLDS: DriftThresholds = {
  * Compute cosine similarity between two equal-length vectors.
  * Returns a value between 0 (orthogonal) and 1 (identical direction).
  */
-function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
+export function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
 
   let dot = 0;
@@ -61,11 +61,11 @@ function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
  * Convert a cosine similarity score to a drift score.
  * High similarity = low drift. Drift score = 1 - similarity.
  */
-function similarityToDriftScore(similarity: number): DriftScore {
+export function similarityToDriftScore(similarity: number): DriftScore {
   return Math.max(0, Math.min(1, 1 - similarity));
 }
 
-function scoreToDriftSeverity(
+export function scoreToDriftSeverity(
   score: DriftScore,
   thresholds: DriftThresholds,
 ): DriftSeverity {
@@ -75,7 +75,7 @@ function scoreToDriftSeverity(
   return "halt";
 }
 
-function severityToAction(severity: DriftSeverity): DriftAction {
+export function severityToAction(severity: DriftSeverity): DriftAction {
   switch (severity) {
     case "nominal": return "none";
     case "monitor": return "monitor";
@@ -122,7 +122,7 @@ async function loadSelfCheck(filePath: string): Promise<DriftSelfCheck | null> {
  * embeddings once the model is downloaded. The interface is identical —
  * only the scoring mechanism changes.
  */
-async function embedResponses(responses: readonly string[]): Promise<number[]> {
+export async function embedResponses(responses: readonly string[]): Promise<number[]> {
   const combined = responses.join(" ").toLowerCase();
   const words = combined.split(/\s+/);
 

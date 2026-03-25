@@ -22,7 +22,7 @@ import type {
   LiveAgentRegistry,
 } from "./types/index.js";
 
-function sanitizePathSegment(s: string): string {
+export function sanitizePathSegment(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
@@ -332,7 +332,7 @@ async function buildDependencyGraph(): Promise<Map<string, readonly string[]>> {
  * Detect whether `startId` participates in a dependency cycle.
  * Uses iterative DFS with an explicit stack — stack overflow safe.
  */
-function hasCycle(startId: string, graph: Map<string, readonly string[]>): boolean {
+export function hasCycle(startId: string, graph: Map<string, readonly string[]>): boolean {
   const visited = new Set<string>();
   const inStack = new Set<string>();
   const stack: Array<{ id: string; idx: number }> = [{ id: startId, idx: 0 }];

@@ -120,6 +120,32 @@ export async function spawnCouncilForResearchReview(
 }
 
 /**
+ * Spawn a Council agent to commission research for a task before Crafter assignment.
+ * The agent estimates token budget, formulates the research question, writes to
+ * ## Council Research, and signals RESEARCH_SIGNAL: commissioned.
+ */
+export async function spawnCouncilForResearchCommission(
+  taskFilePath: string,
+  projectSlug: string,
+  projectPath: string,
+  councilAgentId: string,
+  deps: SpawnDependencies,
+  onExit: (result: AgentResult) => void | Promise<void>,
+): Promise<void> {
+  const context: AgentContext = {
+    role: "council",
+    agent_id: councilAgentId,
+    task_file_path: taskFilePath,
+    project_path: projectPath,
+    project_slug: projectSlug,
+    phase: "research-commission",
+    extra_context: `You are commissioning research for this task before it can be assigned to a Crafter. Follow the Pre-Task Research Gate from your CLAUDE.md role file: estimate the token budget, formulate the research question, and write your findings to ## Council Research. When done, write: RESEARCH_SIGNAL: commissioned`,
+  };
+
+  await spawnAgent(context, { ...deps, onExit });
+}
+
+/**
  * Spawn a Council agent to perform a project kickoff.
  * No task file is provided — the agent reads the project's implementation plan,
  * assesses existing code, creates task files (status: blocked), and submits

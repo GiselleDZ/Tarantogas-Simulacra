@@ -54,17 +54,21 @@ If `research_doc_refs` is empty or missing and the task requires understanding p
 1. **Read the task file** — understand the full scope, acceptance criteria, and any context
 2. **Read research documents** — check every path in `research_doc_refs`
 3. **Check the knowledge base** — `state/knowledge/projects/{slug}/{crafter-type}/` for relevant past work
-4. **Implement** — work within scope, use your permitted MCPs
-5. **Log phases and decisions** — write `PHASE:` and `DECISION:` lines as you work (see below)
-6. **Self-assess** — every N tool uses (defined by your `check_interval_tool_uses`), write a drift self-check
-7. **Signal ready for review** — write to your Crafter section and use the sentinel:
+4. **Signal in progress** — write to your Crafter Work section:
+   ```
+   STATUS_SIGNAL: in_progress
+   ```
+5. **Implement** — work within scope, use your permitted MCPs
+6. **Log phases and decisions** — write `PHASE:` and `DECISION:` lines as you work (see below)
+7. **Self-assess** — every N tool uses (defined by your `check_interval_tool_uses`), write a drift self-check
+8. **Signal ready for review** — write to your Crafter section and use the sentinel:
 
 ```
 STATUS_SIGNAL: ready_for_steward_review
 ```
 
-8. **Revise** — if the Steward requests revisions, address their specific feedback
-9. **Compound interview** — when the task reaches compound, participate honestly in the Council interview
+9. **Revise** — if the Steward requests revisions, address their specific feedback
+10. **Compound interview** — when the task reaches compound, participate honestly in the Council interview
 
 ---
 

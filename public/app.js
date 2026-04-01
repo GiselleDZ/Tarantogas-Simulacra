@@ -11,6 +11,13 @@ let activeRoleFilter = 'all';
 let autoscroll = true;
 let activeTab = 'approvals';
 
+// System health state
+let systemAgents = [];
+let systemDriftEvents = [];
+let systemEvents = [];
+let systemCosts = { global_total_usd: 0, per_project: [] };
+let systemLoaded = false;
+
 const PANE_DISPLAY = { approvals: 'grid', activity: 'flex', projects: 'flex', system: 'flex' };
 
 // ── DOM helpers ────────────────────────────────────────────────────────────────
@@ -22,6 +29,18 @@ function escapeHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function formatTimestamp(isoString) {
+  const d = new Date(isoString);
+  const mon = MONTHS[d.getMonth()];
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${mon} ${dd}, ${yyyy} ${hh}:${mm}`;
 }
 
 function statusBadgeClass(record) {
@@ -67,6 +86,10 @@ function switchTab(name) {
     }
   }
   if (name === 'projects' && !projectsLoaded) loadProjects();
+  if (name === 'system') {
+    renderSystemHealth();
+    if (!systemLoaded) loadSystemHealth();
+  }
 }
 
 for (const btn of document.querySelectorAll('.tab')) {
@@ -109,6 +132,7 @@ function renderQueue() {
         <span>${escapeHtml(fm.project ?? '—')}</span>
         <span>${escapeHtml(fm.created_by)}</span>
       </div>
+      <div class="card-time">${formatTimestamp(fm.created_at)}</div>
     `;
     card.addEventListener('click', () => selectApproval(fm.id));
     queue.appendChild(card);
@@ -179,6 +203,17 @@ function renderActions(status, id) {
     return;
   }
 
+  // Response textarea — the primary interaction for substantive answers
+  const textarea = document.createElement('textarea');
+  textarea.id = 'action-rationale';
+  textarea.className = 'action-rationale';
+  textarea.placeholder = 'Your response...';
+  textarea.rows = 3;
+  container.appendChild(textarea);
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'action-btn-row';
+
   const buttons = [
     { label: 'Approve', cls: 'btn btn-approve', action: 'approved' },
     { label: 'Decline', cls: 'btn btn-decline', action: 'declined' },
@@ -191,8 +226,10 @@ function renderActions(status, id) {
     btn.className = cls;
     btn.textContent = label;
     btn.addEventListener('click', () => handleAction(id, action, btn));
-    container.appendChild(btn);
+    btnRow.appendChild(btn);
   }
+
+  container.appendChild(btnRow);
 }
 
 // ── Actions ────────────────────────────────────────────────────────────────────
@@ -205,12 +242,7 @@ async function handleAction(id, action, btn) {
       return;
     }
 
-    let rationale = '';
-    if (action === 'approved' || action === 'declined') {
-      const input = window.prompt(`Rationale for "${action}" (optional, press Enter to skip):`);
-      if (input === null) { btn.disabled = false; return; }
-      rationale = input.trim();
-    }
+    const rationale = ($('action-rationale')?.value ?? '').trim();
 
     await apiPost(`/api/approvals/${id}/decide`, {
       decision: action,
@@ -326,11 +358,7 @@ function selectApproval(id) {
 
 // ── Activity Feed ──────────────────────────────────────────────────────────────
 function formatTime(isoString) {
-  const d = new Date(isoString);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
+  return formatTimestamp(isoString);
 }
 
 function createEventRow(evt) {
@@ -673,6 +701,168 @@ $('add-project-form').addEventListener('submit', async (e) => {
   await loadProjects();
 });
 
+// ── System Health Tab ─────────────────────────────────────────────────────────
+function formatUptime(ms) {
+  if (ms < 1000) return '0s';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
+async function loadSystemHealth() {
+  try {
+    const res = await fetch('/api/system');
+    const data = await res.json();
+    systemAgents = data.agents || [];
+    systemDriftEvents = data.drift_events || [];
+    systemEvents = data.system_events || [];
+    systemCosts = data.costs || { global_total_usd: 0, per_project: [] };
+    systemLoaded = true;
+    if (activeTab === 'system') renderSystemHealth();
+  } catch {
+    // Silent — WS will bring data when available
+  }
+}
+
+function renderSystemHealth() {
+  renderAgentsTable();
+  renderDriftEvents();
+  renderCostSummary();
+  renderSystemEvents();
+}
+
+function renderAgentsTable() {
+  const tbody = $('agents-tbody');
+  const emptyEl = $('agents-empty');
+  tbody.innerHTML = '';
+
+  if (systemAgents.length === 0) {
+    $('agents-table').hidden = true;
+    emptyEl.hidden = false;
+    return;
+  }
+  $('agents-table').hidden = false;
+  emptyEl.hidden = true;
+
+  for (const agent of systemAgents) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(agent.id)}</td>
+      <td><span class="agent-role-${agent.role}">${escapeHtml(agent.role)}${agent.crafter_type ? ' (' + escapeHtml(agent.crafter_type) + ')' : ''}</span></td>
+      <td>${agent.pid}</td>
+      <td>${escapeHtml(agent.task_id || '—')}</td>
+      <td>${escapeHtml(agent.project_slug || '—')}</td>
+      <td>${formatUptime(agent.uptime_ms)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderDriftEvents() {
+  const list = $('drift-list');
+  const emptyEl = $('drift-empty');
+  list.innerHTML = '';
+
+  if (systemDriftEvents.length === 0) {
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+
+  // Show newest first
+  const reversed = [...systemDriftEvents].reverse();
+  for (const evt of reversed) {
+    const row = document.createElement('div');
+    row.className = 'drift-row';
+    row.innerHTML = `
+      <span class="drift-time">${formatTimestamp(evt.timestamp)}</span>
+      <span class="drift-agent" title="${escapeHtml(evt.agent_id)}">${escapeHtml(evt.agent_id)}</span>
+      <span class="drift-severity drift-severity-${evt.severity}">${escapeHtml(evt.severity)}</span>
+      <span class="drift-score">${evt.score.toFixed(2)}</span>
+      <span class="drift-action">${escapeHtml(evt.action_taken.replace(/_/g, ' '))}</span>
+    `;
+    list.appendChild(row);
+  }
+}
+
+function renderCostSummary() {
+  const container = $('cost-summary');
+  const emptyEl = $('costs-empty');
+  container.innerHTML = '';
+
+  if (systemCosts.global_total_usd === 0 && systemCosts.per_project.length === 0) {
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+
+  container.innerHTML = `
+    <div class="cost-global">$${systemCosts.global_total_usd.toFixed(4)}</div>
+    <div class="cost-global-label">Total spend across all projects</div>
+  `;
+
+  for (const p of systemCosts.per_project) {
+    const card = document.createElement('div');
+    card.className = 'cost-project-card';
+    card.innerHTML = `
+      <div class="cost-project-name">${escapeHtml(p.slug)}</div>
+      <div class="cost-project-amount">$${p.total_usd.toFixed(4)}</div>
+      <div class="cost-project-count">${p.entry_count} entr${p.entry_count === 1 ? 'y' : 'ies'}</div>
+    `;
+    container.appendChild(card);
+  }
+}
+
+function renderSystemEvents() {
+  const feed = $('system-event-feed');
+  const emptyEl = $('events-empty');
+  feed.innerHTML = '';
+
+  if (systemEvents.length === 0) {
+    emptyEl.hidden = false;
+    return;
+  }
+  emptyEl.hidden = true;
+
+  // Show newest first
+  const reversed = [...systemEvents].reverse();
+  for (const evt of reversed) {
+    feed.appendChild(createSystemEventRow(evt));
+  }
+}
+
+function createSystemEventRow(evt) {
+  const row = document.createElement('div');
+  row.className = 'system-event-row';
+
+  row.innerHTML = `
+    <span class="sev-time">${formatTimestamp(evt.t)}</span>
+    <span class="sev-event sev-event-${evt.ev}">${escapeHtml(evt.ev.replace(/_/g, ' '))}</span>
+    <span class="sev-agent" title="${escapeHtml(evt.agent_id || '')}">${escapeHtml(evt.agent_id || '—')}</span>
+    <span class="sev-project">${escapeHtml(evt.project || '—')}</span>
+    <span class="sev-cost">${evt.cost_usd != null ? '$' + evt.cost_usd.toFixed(4) : ''}</span>
+    <span class="sev-duration">${evt.duration_ms != null ? formatUptime(evt.duration_ms) : ''}</span>
+    <span class="sev-msg">${escapeHtml(evt.msg || '')}</span>
+  `;
+
+  return row;
+}
+
+function appendSystemEvents(newEvents) {
+  systemEvents.push(...newEvents);
+  if (systemEvents.length > 200) systemEvents.splice(0, systemEvents.length - 200);
+  if (activeTab === 'system') renderSystemEvents();
+}
+
+function appendDriftEvents(newEvents) {
+  systemDriftEvents.push(...newEvents);
+  if (systemDriftEvents.length > 100) systemDriftEvents.splice(0, systemDriftEvents.length - 100);
+  if (activeTab === 'system') renderDriftEvents();
+}
+
 // ── WebSocket ──────────────────────────────────────────────────────────────────
 function connectWs() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -720,6 +910,26 @@ function connectWs() {
       for (const p of msg.projects) projects.set(p.slug, p);
       if (projectsLoaded) renderProjectList();
       if (selectedProjectSlug) renderProjectHeader();
+    } else if (msg.type === 'system_snapshot') {
+      systemAgents = msg.data.agents || [];
+      systemDriftEvents = msg.data.drift_events || [];
+      systemEvents = msg.data.system_events || [];
+      systemCosts = msg.data.costs || { global_total_usd: 0, per_project: [] };
+      systemLoaded = true;
+      if (activeTab === 'system') renderSystemHealth();
+    } else if (msg.type === 'system_update') {
+      const u = msg.update;
+      if (u.section === 'agents') {
+        systemAgents = u.agents;
+        if (activeTab === 'system') renderAgentsTable();
+      } else if (u.section === 'drift_events') {
+        appendDriftEvents(u.events);
+      } else if (u.section === 'system_events') {
+        appendSystemEvents(u.events);
+      } else if (u.section === 'costs') {
+        systemCosts = u.costs;
+        if (activeTab === 'system') renderCostSummary();
+      }
     }
   });
 }

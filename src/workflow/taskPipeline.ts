@@ -41,8 +41,7 @@ export const TRANSITION_TABLE: readonly TransitionRule[] = [
     section: "## Crafter Work",
   },
 
-  // Crafter role only writes ready_for_steward_review (never in_progress)
-  // — allow direct assigned → steward_review
+  // Fast-path: if Crafter skips the in_progress signal, allow direct assigned → steward_review
   {
     from: "assigned",
     to: "steward_review",

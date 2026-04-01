@@ -10,7 +10,7 @@ import { promises as fs } from "fs";
 import { readMarkdownFile, writeMarkdownFile, writeFile } from "./io/fileStore.js";
 import { readRegistry } from "./agents/spawner.js";
 import { spawnCrafter } from "./agents/crafter.js";
-import { spawnCouncilForKickoff } from "./agents/council.js";
+import { spawnCouncilForKickoff, spawnCouncilForResearchCommission } from "./agents/council.js";
 import { evaluateTransitions, scrubSentinels } from "./workflow/taskPipeline.js";
 import { listProjects, setProjectStatus } from "./workflow/onboarding.js";
 import { createApproval } from "./workflow/approvalQueue.js";
@@ -20,10 +20,23 @@ import type {
   TaskStatus,
   AgentRole,
   LiveAgentRegistry,
+  ProjectRegistry,
 } from "./types/index.js";
 
 export function sanitizePathSegment(s: string): string {
   return s.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+/**
+ * Check whether a task has completed research (has at least one non-empty research_doc_refs entry).
+ * Exported for testing.
+ */
+export function hasCompletedResearch(fm: TaskFrontmatter): boolean {
+  return (
+    Array.isArray(fm.research_doc_refs) &&
+    fm.research_doc_refs.length > 0 &&
+    fm.research_doc_refs.some((ref) => ref.trim().length > 0)
+  );
 }
 
 const TASKS_DIR = "state/tasks";
@@ -45,6 +58,7 @@ let notifiedGlobalBudget = false;
  */
 const CRAFTER_REGISTRATION_GRACE_MS = 30_000;
 const REVIEW_REGISTRATION_GRACE_MS = 30_000;
+const COUNCIL_RESEARCH_GRACE_MS = 30_000;
 
 interface SchedulerDependencies {
   readonly rolesConfig: Parameters<typeof spawnCrafter>[5]["rolesConfig"];
@@ -178,6 +192,7 @@ async function resetOrphanedTask(filePath: string): Promise<void> {
     ...doc.frontmatter,
     status: "pending",
     assigned_crafter: null,
+    assigned_council_author: null,
     updated_at: new Date().toISOString(),
   };
   // Scrub any stale sentinels so the new crafter assignment doesn't
@@ -444,6 +459,40 @@ async function getGlobalCostTotal(): Promise<number> {
   return total;
 }
 
+// ── Stuck kickoff recovery ────────────────────────────────────────────────────
+
+/** Grace period before treating a kickoff_in_progress project as stuck. */
+const KICKOFF_GRACE_MS = 60_000;
+
+/**
+ * Pure helper: given a list of projects and the live registry, return the slugs
+ * of `kickoff_in_progress` projects that have no live council agent and have
+ * exceeded the grace period. Exported for testing.
+ */
+export function findStuckKickoffs(
+  projects: readonly ProjectRegistry[],
+  registry: LiveAgentRegistry,
+): string[] {
+  const now = Date.now();
+  const stuck: string[] = [];
+
+  for (const project of projects) {
+    if (project.status !== "kickoff_in_progress") continue;
+
+    const ageMs = now - new Date(project.updated_at).getTime();
+    if (ageMs < KICKOFF_GRACE_MS) continue;
+
+    const hasAliveCouncil = Object.values(registry).some(
+      (agent) => agent.role === "council" && agent.project_slug === project.slug,
+    );
+    if (hasAliveCouncil) continue;
+
+    stuck.push(project.slug);
+  }
+
+  return stuck;
+}
+
 /**
  * Run one scheduling cycle: assign pending tasks to new agents.
  * Called by the orchestrator on its poll interval.
@@ -451,6 +500,18 @@ async function getGlobalCostTotal(): Promise<number> {
 export async function runSchedulerCycle(
   deps: SchedulerDependencies,
 ): Promise<void> {
+  // Recover stuck kickoff_in_progress projects — reset to kickoff_pending so
+  // they get re-spawned below. This covers orchestrator restarts (in-memory
+  // failure counters lost) and kickoff agents that exited successfully without
+  // actually producing a plan approval.
+  const allProjects = await listProjects();
+  const earlyRegistry = await readRegistry();
+  const stuckSlugs = findStuckKickoffs(allProjects, earlyRegistry);
+  for (const slug of stuckSlugs) {
+    console.warn(`[Scheduler] Project ${slug} stuck at kickoff_in_progress with no live agent — resetting to kickoff_pending`);
+    await setProjectStatus(slug, "kickoff_pending");
+  }
+
   // Detect and launch kickoff agents for newly activated projects
   const kickoffProjects = await listProjects("kickoff_pending");
   for (const project of kickoffProjects) {
@@ -643,6 +704,69 @@ export async function runSchedulerCycle(
         }
         continue;
       }
+    }
+
+    // ── Research gate: ensure research is completed before Crafter spawn ──
+    if (!hasCompletedResearch(task.frontmatter)) {
+      if (task.frontmatter.assigned_council_author !== null) {
+        // Council already assigned — check if alive
+        const councilAlive = registry[task.frontmatter.assigned_council_author] !== undefined;
+        if (councilAlive) continue; // Council is still working on research commission
+
+        // Council agent is dead — check grace period before clearing
+        const assignedAgeMs = Date.now() - new Date(task.frontmatter.updated_at).getTime();
+        if (assignedAgeMs < COUNCIL_RESEARCH_GRACE_MS) continue;
+
+        // Check for pending sentinel before clearing
+        const freshDoc = await readMarkdownFile<TaskFrontmatter>(task.filePath);
+        if (freshDoc !== null) {
+          const pendingTransition = evaluateTransitions(
+            freshDoc.frontmatter.status,
+            freshDoc.body,
+            freshDoc.frontmatter,
+          );
+          if (pendingTransition !== null) {
+            console.log(`[Scheduler] Sentinel present in research-pending task — skipping reset: ${task.filePath}`);
+            continue;
+          }
+        }
+
+        // Clear the dead council assignment so it can be retried next cycle
+        const resetDoc = await readMarkdownFile<TaskFrontmatter>(task.filePath);
+        if (resetDoc !== null) {
+          await writeMarkdownFile(task.filePath, {
+            ...resetDoc.frontmatter,
+            assigned_council_author: null,
+            updated_at: new Date().toISOString(),
+          }, resetDoc.body);
+          console.warn(`[Scheduler] Dead council agent cleared from task: ${task.filePath}`);
+        }
+        continue;
+      }
+
+      // No council assigned — spawn one for research commission
+      const councilAgentId = `council-research-${randomUUID()}`;
+      const projectPath = task.frontmatter.project_path ?? process.cwd();
+
+      const researchDoc = await readMarkdownFile<TaskFrontmatter>(task.filePath);
+      if (researchDoc === null) continue;
+
+      await writeMarkdownFile(task.filePath, {
+        ...researchDoc.frontmatter,
+        assigned_council_author: councilAgentId,
+        updated_at: new Date().toISOString(),
+      }, researchDoc.body);
+
+      await spawnCouncilForResearchCommission(
+        task.filePath,
+        task.frontmatter.project,
+        projectPath,
+        councilAgentId,
+        deps,
+        deps.onAgentResult,
+      );
+
+      break; // One spawn per cycle
     }
 
     const crafterAgentId = `crafter-${randomUUID()}`;

@@ -12,14 +12,17 @@ import { WebSocketServer, WebSocket } from "ws";
 import { ApprovalWatcher } from "./approvalWatcher.js";
 import { ActivityWatcher } from "./activityWatcher.js";
 import { TaskWatcher } from "./taskWatcher.js";
+import { SystemHealthWatcher } from "./systemHealthWatcher.js";
 import { createApprovalRoutes } from "./routes/approvals.js";
 import { createActivityRoutes } from "./routes/activity.js";
 import { createProjectRoutes } from "./routes/projects.js";
+import { createSystemRoutes } from "./routes/system.js";
 import { Watcher } from "../io/watcher.js";
 import { listProjects } from "../workflow/onboarding.js";
 import type { ApprovalRecord } from "./approvalWatcher.js";
 import type { ActivityEvent } from "./activityWatcher.js";
 import type { TaskRecord } from "./taskWatcher.js";
+import type { SystemHealthSnapshot, SystemHealthUpdate } from "./systemHealthWatcher.js";
 import type { ApprovalDecidedCallback } from "../io/approvalConsole.js";
 import type { ProjectRegistry } from "../types/index.js";
 
@@ -34,7 +37,9 @@ type WsMessage =
   | { type: "activity_snapshot";  events: ActivityEvent[] }
   | { type: "activity_lines";     events: ActivityEvent[] }
   | { type: "task_update";        task: TaskRecord }
-  | { type: "projects_update";    projects: ProjectRegistry[] };
+  | { type: "projects_update";    projects: ProjectRegistry[] }
+  | { type: "system_snapshot";    data: SystemHealthSnapshot }
+  | { type: "system_update";      update: SystemHealthUpdate };
 
 function broadcast(clients: Set<WebSocket>, msg: WsMessage): void {
   const payload = JSON.stringify(msg);
@@ -79,6 +84,10 @@ export async function startUIServer(options: UIServerOptions): Promise<void> {
     broadcast(clients, { type: "task_update", task });
   });
 
+  const systemHealthWatcher = new SystemHealthWatcher((update) => {
+    broadcast(clients, { type: "system_update", update });
+  });
+
   // Watch the project registry and push updates to all connected clients
   Watcher.create(
     ["state/projects/registry.json"],
@@ -109,6 +118,7 @@ export async function startUIServer(options: UIServerOptions): Promise<void> {
   app.use("/api/approvals", createApprovalRoutes(watcher, options.onApprovalDecided));
   app.use("/api/activity", createActivityRoutes(activityWatcher));
   app.use("/api/projects", createProjectRoutes(taskWatcher));
+  app.use("/api/system", createSystemRoutes(systemHealthWatcher));
 
   // 404 handler — must come after all routes, returns JSON so the browser can parse it
   app.use((req, res) => {
@@ -131,6 +141,7 @@ export async function startUIServer(options: UIServerOptions): Promise<void> {
     clients.add(ws);
     ws.send(JSON.stringify({ type: "snapshot",          approvals: watcher.getAll() } satisfies WsMessage));
     ws.send(JSON.stringify({ type: "activity_snapshot", events:    activityWatcher.getRecent() } satisfies WsMessage));
+    ws.send(JSON.stringify({ type: "system_snapshot",   data:      systemHealthWatcher.getSnapshot() } satisfies WsMessage));
     ws.on("close", () => { clients.delete(ws); });
     ws.on("error", () => { clients.delete(ws); });
   });

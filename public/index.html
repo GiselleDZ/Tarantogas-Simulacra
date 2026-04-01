@@ -103,7 +103,41 @@
     </div>
 
     <div id="tab-system" class="tab-pane" hidden>
-      <div class="coming-soon">System Health — Phase 4</div>
+      <div class="system-section" id="section-agents">
+        <div class="system-section-header">Live Agents</div>
+        <table id="agents-table">
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Role</th>
+              <th>PID</th>
+              <th>Task</th>
+              <th>Project</th>
+              <th>Uptime</th>
+            </tr>
+          </thead>
+          <tbody id="agents-tbody"></tbody>
+        </table>
+        <div id="agents-empty" class="empty-state">No live agents</div>
+      </div>
+
+      <div class="system-section" id="section-drift">
+        <div class="system-section-header">Drift Events</div>
+        <div id="drift-list"></div>
+        <div id="drift-empty" class="empty-state">No drift events</div>
+      </div>
+
+      <div class="system-section" id="section-costs">
+        <div class="system-section-header">System Costs</div>
+        <div id="cost-summary"></div>
+        <div id="costs-empty" class="empty-state">No cost data</div>
+      </div>
+
+      <div class="system-section" id="section-events">
+        <div class="system-section-header">System Events</div>
+        <div id="system-event-feed"></div>
+        <div id="events-empty" class="empty-state">No system events</div>
+      </div>
     </div>
   </main>
 

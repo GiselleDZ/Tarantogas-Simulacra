@@ -2,6 +2,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { writeMarkdownFile, readMarkdownFile, writeFile } from "../io/fileStore.js";
 import { createApproval } from "./approvalQueue.js";
+import { ensureGitignore } from "./gitignoreGenerator.js";
 import type { ProjectRegistry, ProjectStatus } from "../types/index.js";
 
 const PROJECTS_REGISTRY = "state/projects/registry.json";
@@ -108,6 +109,13 @@ export async function activateProject(slug: string): Promise<void> {
 
   for (const dir of dirs) {
     await fs.mkdir(dir, { recursive: true });
+  }
+
+  // Generate .gitignore for the project repo before agents touch it
+  try {
+    await ensureGitignore(entry.path);
+  } catch (err: unknown) {
+    console.warn(`[Onboarding] Failed to generate .gitignore for ${slug}:`, err);
   }
 }
 

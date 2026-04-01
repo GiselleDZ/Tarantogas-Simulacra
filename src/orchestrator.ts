@@ -28,6 +28,7 @@ import {
   spawnCouncilForPeerReview,
   spawnCouncilForResearchReview,
 } from "./agents/council.js";
+import { spawnCrafterForRevision } from "./agents/crafter.js";
 import { spawnStewardForReview, spawnStewardForFinalSignOff } from "./agents/steward.js";
 import { spawnResearchAgentForTask } from "./agents/researchAgent.js";
 import { writeDriftLearning } from "./learning/councilLearning.js";
@@ -272,7 +273,7 @@ async function handleTransition(
     }
 
     case "research_review": {
-      const councilId = `council-${randomUUID()}`;
+      const councilId = frontmatter.assigned_council_author ?? `council-${randomUUID()}`;
       await spawnCouncilForResearchReview(
         taskFilePath,
         frontmatter.project,
@@ -285,7 +286,7 @@ async function handleTransition(
     }
 
     case "steward_review": {
-      const stewardId = `steward-${randomUUID()}`;
+      const stewardId = frontmatter.assigned_steward ?? `steward-${randomUUID()}`;
       // Write assigned_steward to frontmatter so steward_final → compound can validate it
       const stewardDoc = await readMarkdownFile<TaskFrontmatter>(taskFilePath);
       if (stewardDoc === null) {
@@ -310,7 +311,7 @@ async function handleTransition(
 
     case "steward_final": {
       const crafterAgentId = frontmatter.assigned_crafter ?? "unknown";
-      const stewardId = `steward-${randomUUID()}`;
+      const stewardId = frontmatter.assigned_steward ?? `steward-${randomUUID()}`;
       await spawnStewardForFinalSignOff(
         taskFilePath,
         frontmatter.project,
@@ -362,6 +363,23 @@ async function handleTransition(
       break;
     }
 
+    case "crafter_revision": {
+      const crafterId = frontmatter.assigned_crafter ?? `crafter-${randomUUID()}`;
+      const revisionContext =
+        "Review the steward and council review sections of your task file for revision requests.";
+      await spawnCrafterForRevision(
+        taskFilePath,
+        frontmatter.project,
+        projectPath,
+        frontmatter.crafter_type,
+        crafterId,
+        revisionContext,
+        spawnDeps,
+        onExit,
+      );
+      break;
+    }
+
     case "done":
       console.log(`[Orchestrator] Task complete: ${taskFilePath}`);
       break;
@@ -371,8 +389,8 @@ async function handleTransition(
       break;
 
     default:
-      // Other transitions (in_progress, crafter_revision, etc.) need no
-      // orchestrator action beyond the frontmatter update already applied.
+      // Other transitions (in_progress, etc.) need no orchestrator action
+      // beyond the frontmatter update already applied.
       break;
   }
 }
@@ -449,12 +467,15 @@ async function main(): Promise<void> {
   const origLog = console.log.bind(console);
   const origWarn = console.warn.bind(console);
   const origError = console.error.bind(console);
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const ts = (): string => {
     const now = new Date();
+    const mon = MONTHS[now.getMonth()];
+    const dd = String(now.getDate()).padStart(2, "0");
+    const yyyy = now.getFullYear();
     const hh = String(now.getHours()).padStart(2, "0");
     const mm = String(now.getMinutes()).padStart(2, "0");
-    const ss = String(now.getSeconds()).padStart(2, "0");
-    return `\x1b[90m${hh}:${mm}:${ss}\x1b[0m`; // grey timestamp
+    return `\x1b[90m${mon} ${dd}, ${yyyy} ${hh}:${mm}\x1b[0m`;
   };
   console.log = (...args: unknown[]) => { origLog(ts(), ...args); };
   console.warn = (...args: unknown[]) => { origWarn(ts(), ...args); };

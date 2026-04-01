@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { hasCycle, sanitizePathSegment, MAX_CONCURRENT_AGENTS } from "./scheduler.js";
+import { hasCycle, sanitizePathSegment, MAX_CONCURRENT_AGENTS, findStuckKickoffs, hasCompletedResearch } from "./scheduler.js";
+import type { ProjectRegistry, LiveAgentRegistry } from "./types/index.js";
 
 // ── 11b: hasCycle ──────────────────────────────────────────────────────────
 
@@ -110,5 +111,121 @@ describe("sanitizePathSegment", () => {
 describe("MAX_CONCURRENT_AGENTS", () => {
   it("is exported and equals 8", () => {
     expect(MAX_CONCURRENT_AGENTS).toBe(8);
+  });
+});
+
+// ── findStuckKickoffs ──────────────────────────────────────────────────────
+
+function makeProject(slug: string, status: string, updatedAt: string): ProjectRegistry {
+  return {
+    slug,
+    name: slug,
+    path: `/path/${slug}`,
+    status: status as ProjectRegistry["status"],
+    created_at: updatedAt,
+    updated_at: updatedAt,
+    crafter_types: ["frontend"],
+    active_task_ids: [],
+  };
+}
+
+describe("findStuckKickoffs", () => {
+  const oldTimestamp = new Date(Date.now() - 120_000).toISOString(); // 2 min ago
+  const freshTimestamp = new Date(Date.now() - 5_000).toISOString(); // 5 sec ago
+
+  it("returns slugs of kickoff_in_progress projects with no live council agent", () => {
+    const projects = [makeProject("alpha", "kickoff_in_progress", oldTimestamp)];
+    const registry: LiveAgentRegistry = {};
+    expect(findStuckKickoffs(projects, registry)).toEqual(["alpha"]);
+  });
+
+  it("skips projects that are not kickoff_in_progress", () => {
+    const projects = [
+      makeProject("a", "active", oldTimestamp),
+      makeProject("b", "kickoff_pending", oldTimestamp),
+      makeProject("c", "kickoff_failed", oldTimestamp),
+    ];
+    expect(findStuckKickoffs(projects, {})).toEqual([]);
+  });
+
+  it("skips kickoff_in_progress projects that have a live council agent", () => {
+    const projects = [makeProject("alpha", "kickoff_in_progress", oldTimestamp)];
+    const registry: LiveAgentRegistry = {
+      "council-kickoff-abc": {
+        id: "council-kickoff-abc",
+        role: "council",
+        project_slug: "alpha",
+        spawned_at: oldTimestamp,
+        pid: 1234,
+      },
+    };
+    expect(findStuckKickoffs(projects, registry)).toEqual([]);
+  });
+
+  it("skips projects updated within the grace period", () => {
+    const projects = [makeProject("alpha", "kickoff_in_progress", freshTimestamp)];
+    expect(findStuckKickoffs(projects, {})).toEqual([]);
+  });
+
+  it("does not match a council agent from a different project", () => {
+    const projects = [makeProject("alpha", "kickoff_in_progress", oldTimestamp)];
+    const registry: LiveAgentRegistry = {
+      "council-kickoff-abc": {
+        id: "council-kickoff-abc",
+        role: "council",
+        project_slug: "beta",
+        spawned_at: oldTimestamp,
+        pid: 1234,
+      },
+    };
+    expect(findStuckKickoffs(projects, registry)).toEqual(["alpha"]);
+  });
+
+  it("does not match a non-council agent from the same project", () => {
+    const projects = [makeProject("alpha", "kickoff_in_progress", oldTimestamp)];
+    const registry: LiveAgentRegistry = {
+      "crafter-abc": {
+        id: "crafter-abc",
+        role: "crafter",
+        project_slug: "alpha",
+        spawned_at: oldTimestamp,
+        pid: 1234,
+      },
+    };
+    expect(findStuckKickoffs(projects, registry)).toEqual(["alpha"]);
+  });
+});
+
+// ── hasCompletedResearch ────────────────────────────────────────────────────
+
+describe("hasCompletedResearch", () => {
+  it("returns false when research_doc_refs is undefined", () => {
+    const fm = { research_doc_refs: undefined } as unknown as import("./types/index.js").TaskFrontmatter;
+    expect(hasCompletedResearch(fm)).toBe(false);
+  });
+
+  it("returns false when research_doc_refs is empty array", () => {
+    const fm = { research_doc_refs: [] } as unknown as import("./types/index.js").TaskFrontmatter;
+    expect(hasCompletedResearch(fm)).toBe(false);
+  });
+
+  it("returns false when research_doc_refs contains only empty string", () => {
+    const fm = { research_doc_refs: [""] } as unknown as import("./types/index.js").TaskFrontmatter;
+    expect(hasCompletedResearch(fm)).toBe(false);
+  });
+
+  it("returns false when research_doc_refs contains only whitespace", () => {
+    const fm = { research_doc_refs: ["  "] } as unknown as import("./types/index.js").TaskFrontmatter;
+    expect(hasCompletedResearch(fm)).toBe(false);
+  });
+
+  it("returns true when research_doc_refs has one valid path", () => {
+    const fm = { research_doc_refs: ["state/knowledge/research/auth.md"] } as unknown as import("./types/index.js").TaskFrontmatter;
+    expect(hasCompletedResearch(fm)).toBe(true);
+  });
+
+  it("returns true when research_doc_refs has mixed empty and valid entries", () => {
+    const fm = { research_doc_refs: ["", "path/to/doc.md"] } as unknown as import("./types/index.js").TaskFrontmatter;
+    expect(hasCompletedResearch(fm)).toBe(true);
   });
 });

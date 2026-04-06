@@ -6,13 +6,13 @@
   --surface-hi: #5D2300;
   --accent: #CC5200;
   --accent-bright: #E76E00;
-  --accent-muted: rgba(204,82,0,0.25);
-  --accent-subtle: rgba(204,82,0,0.1);
-  --accent-faint: rgba(204,82,0,0.05);
-  --border: rgba(204,82,0,0.25);
-  --text: rgba(255,255,255,0.88);
-  --text-muted: rgba(255,255,255,0.65);
-  --text-faint: rgba(255,255,255,0.42);
+  --accent-muted: rgba(204,82,0,0.35);
+  --accent-subtle: rgba(204,82,0,0.18);
+  --accent-faint: rgba(204,82,0,0.1);
+  --border: rgba(204,82,0,0.3);
+  --text: rgba(255,255,255,0.92);
+  --text-muted: rgba(255,255,255,0.78);
+  --text-faint: rgba(255,255,255,0.58);
   --text-heading: #FFFFFF;
   --error: #E04545;
   --success: #7DD19A;
@@ -32,36 +32,61 @@
 ::-webkit-scrollbar-thumb { background: var(--accent-bright); border-radius: 2px; }
 ::-webkit-scrollbar-corner { background: var(--bg-start); }
 
+html {
+  zoom: 1.3;
+  height: 100%;
+}
+
 body {
-  background: linear-gradient(150deg, var(--bg-start), var(--bg-end));
+  background:
+    radial-gradient(ellipse at bottom right, #3D2418 0%, transparent 65%),
+    linear-gradient(150deg, var(--bg-start), var(--bg-end));
   background-attachment: fixed;
-  min-height: 100vh;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   color: var(--text);
   font-family: var(--font);
   font-size: 13px;
   line-height: 1.5;
 }
 
+/* ── Footer ────────────────────────────────────────────────────────────────── */
+footer {
+  height: 40px;
+  background: rgba(18,9,4,0.6);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+}
+
 /* ── Header ─────────────────────────────────────────────────────────────────── */
 header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 14px;
-  padding: 11px 20px;
+  padding: 14px 20px 11px;
   border-bottom: 1px solid var(--border);
-  background: rgba(18,9,4,0.85);
-  backdrop-filter: blur(8px);
-  position: sticky;
+  background: rgba(18,9,4,0.4);
+  backdrop-filter: blur(12px);
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 100;
-  height: 48px;
 }
 
 .logo {
   color: var(--accent-bright);
   font-weight: 700;
   letter-spacing: 0.15em;
-  font-size: 13px;
+  font-size: 26px;
   text-transform: uppercase;
 }
 
@@ -83,18 +108,22 @@ header {
   letter-spacing: 0.05em;
 }
 
+.tab[data-tab="system"] { position: relative; }
+
 .ws-status {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--error);
-  flex-shrink: 0;
   transition: background 0.3s;
+  position: absolute;
+  top: -2px;
+  right: 3px;
 }
 .ws-status.connected { background: var(--success); }
 
 /* ── Layout ──────────────────────────────────────────────────────────────────── */
-main { height: calc(100vh - 48px); }
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding-top: 72px; padding-bottom: 48px; }
 
 /* ── Tabs ────────────────────────────────────────────────────────────────────── */
 .tabs { display: flex; gap: 2px; }
@@ -129,20 +158,20 @@ main { height: calc(100vh - 48px); }
 }
 .tab-count:empty { display: none; }
 
-/* Tab pane layout */
-.tab-pane { display: none; height: 100%; width: 100%; }
+/* Tab pane layout — display is controlled by JS inline styles (PANE_DISPLAY map).
+   Do NOT set display on #tab-* rules or they override .tab-pane's display:none. */
+.tab-pane { display: none; flex: 1; min-height: 0; width: 100%; }
 
-/* Approvals pane keeps the 2-column grid */
-#tab-approvals { display: grid; grid-template-columns: 300px 1fr; }
+/* Approvals pane: 2-column grid (display:grid set by JS) */
+#tab-approvals { grid-template-columns: 300px 1fr; }
 
-/* Activity pane is a column */
-#tab-activity { display: flex; flex-direction: column; overflow: hidden; }
+/* Activity pane: column layout (display:flex set by JS) */
+#tab-activity { flex-direction: column; overflow: hidden; }
 
-/* Projects is a horizontal split */
-#tab-projects { display: flex; overflow-y: auto; }
+/* Projects: horizontal split (display:flex set by JS) */
 
-/* System is a vertical stack of sections */
-#tab-system { display: flex; flex-direction: column; gap: 16px; padding: 16px 20px; overflow-y: auto; }
+/* System: vertical stack (display:flex set by JS) */
+#tab-system { flex-direction: column; gap: 16px; padding: 16px 20px; overflow-y: auto; }
 
 /* ── Queue sidebar ───────────────────────────────────────────────────────────── */
 #queue {
@@ -155,7 +184,7 @@ main { height: calc(100vh - 48px); }
 }
 
 .empty-state {
-  color: var(--text-faint);
+  color: var(--text-muted);
   font-size: 11px;
   text-align: center;
   padding: 40px 16px;
@@ -172,10 +201,10 @@ main { height: calc(100vh - 48px); }
   transition: background 0.15s, border-color 0.15s;
   background: var(--accent-faint);
 }
-.approval-card:hover { background: var(--accent-subtle); border-color: rgba(204,82,0,0.45); }
-.approval-card.selected { background: rgba(204,82,0,0.12); border-color: var(--accent); }
+.approval-card:hover { background: rgba(204,82,0,0.25); border-color: rgba(204,82,0,0.6); }
+.approval-card.selected { background: rgba(204,82,0,0.2); border-color: var(--accent); }
 .approval-card.status-decided,
-.approval-card.status-in_conversation { opacity: 0.55; }
+.approval-card.status-in_conversation { opacity: 0.75; }
 
 .card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .card-type { font-size: 11px; color: var(--text-heading); font-weight: 600; }
@@ -520,7 +549,7 @@ main { height: calc(100vh - 48px); }
   transition: background 0.15s, border-color 0.15s;
   background: var(--accent-faint);
 }
-.project-card:hover { background: var(--accent-subtle); border-color: rgba(204,82,0,0.45); }
+.project-card:hover { background: var(--accent-subtle); border-color: rgba(204,82,0,0.6); }
 .project-card.selected { background: rgba(204,82,0,0.12); border-color: var(--accent); }
 .project-card-name { font-size: 12px; color: var(--text); margin-bottom: 3px; font-weight: 600; }
 .project-card-meta { font-size: 10px; color: var(--text-muted); display: flex; gap: 8px; }
@@ -545,7 +574,7 @@ main { height: calc(100vh - 48px); }
 #project-view {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
   overflow: hidden;
 }
 
@@ -603,7 +632,7 @@ main { height: calc(100vh - 48px); }
   background: var(--accent-faint);
   transition: background 0.15s, border-color 0.15s;
 }
-.task-card:hover { background: var(--accent-subtle); border-color: rgba(204,82,0,0.45); }
+.task-card:hover { background: var(--accent-subtle); border-color: rgba(204,82,0,0.6); }
 .task-card.selected { background: rgba(204,82,0,0.12); border-color: var(--accent); }
 .task-card-title { font-size: 11px; color: var(--text); margin-bottom: 5px; line-height: 1.35; }
 .task-card-meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }

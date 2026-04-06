@@ -57,6 +57,15 @@ export const TRANSITION_TABLE: readonly TransitionRule[] = [
     section: "## Crafter Work",
   },
 
+  // Steward approves — proceed to final sign-off
+  {
+    from: "steward_review",
+    to: "steward_final",
+    sentinel: "STATUS_SIGNAL: ready_for_steward_final",
+    section: "## Steward Review",
+    requiredField: "assigned_steward",
+  },
+
   // Steward requests revision
   {
     from: "steward_review",

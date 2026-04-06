@@ -105,7 +105,7 @@ function renderQueue() {
     const aS = a.frontmatter.status === 'pending' ? 0 : 1;
     const bS = b.frontmatter.status === 'pending' ? 0 : 1;
     if (aS !== bS) return aS - bS;
-    return a.frontmatter.created_at.localeCompare(b.frontmatter.created_at);
+    return b.frontmatter.created_at.localeCompare(a.frontmatter.created_at);
   });
 
   const pendingCount = sorted.filter(r => r.frontmatter.status === 'pending').length;

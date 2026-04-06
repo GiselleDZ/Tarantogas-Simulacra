@@ -326,6 +326,17 @@ async function handleTransition(
 
     case "compound": {
       const councilId = frontmatter.assigned_council_author ?? `council-${randomUUID()}`;
+      // Write assigned_council_author to frontmatter so compound → council_review can validate it
+      const compoundDoc = await readMarkdownFile<TaskFrontmatter>(taskFilePath);
+      if (compoundDoc === null) {
+        console.error(`[Orchestrator] compound: could not read ${taskFilePath} — aborting spawn`);
+        break;
+      }
+      await writeMarkdownFile(taskFilePath, {
+        ...compoundDoc.frontmatter,
+        assigned_council_author: councilId,
+        updated_at: new Date().toISOString(),
+      }, compoundDoc.body);
       await spawnCouncilForCompound(
         taskFilePath,
         frontmatter.project,
@@ -339,6 +350,17 @@ async function handleTransition(
 
     case "council_review": {
       const authorId = frontmatter.assigned_council_author ?? `council-${randomUUID()}`;
+      // Ensure assigned_council_author is persisted for council_review → council_peer_review
+      const reviewDoc = await readMarkdownFile<TaskFrontmatter>(taskFilePath);
+      if (reviewDoc === null) {
+        console.error(`[Orchestrator] council_review: could not read ${taskFilePath} — aborting spawn`);
+        break;
+      }
+      await writeMarkdownFile(taskFilePath, {
+        ...reviewDoc.frontmatter,
+        assigned_council_author: authorId,
+        updated_at: new Date().toISOString(),
+      }, reviewDoc.body);
       await spawnCouncilForReview(
         taskFilePath,
         frontmatter.project,
@@ -352,6 +374,17 @@ async function handleTransition(
 
     case "council_peer_review": {
       const peerId = frontmatter.assigned_council_peer ?? `council-${randomUUID()}`;
+      // Write assigned_council_peer to frontmatter so council_peer_review → done can validate it
+      const peerDoc = await readMarkdownFile<TaskFrontmatter>(taskFilePath);
+      if (peerDoc === null) {
+        console.error(`[Orchestrator] council_peer_review: could not read ${taskFilePath} — aborting spawn`);
+        break;
+      }
+      await writeMarkdownFile(taskFilePath, {
+        ...peerDoc.frontmatter,
+        assigned_council_peer: peerId,
+        updated_at: new Date().toISOString(),
+      }, peerDoc.body);
       await spawnCouncilForPeerReview(
         taskFilePath,
         frontmatter.project,

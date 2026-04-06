@@ -31,8 +31,8 @@ const ALL_STATUSES: TaskStatus[] = [
 ];
 
 describe("TRANSITION_TABLE invariants", () => {
-  it("has 17 rules", () => {
-    expect(TRANSITION_TABLE.length).toBe(17);
+  it("has 18 rules", () => {
+    expect(TRANSITION_TABLE.length).toBe(18);
   });
 
   it("every 'from' status is a valid TaskStatus", () => {
@@ -106,6 +106,17 @@ describe("evaluateTransitions — happy path for every rule", () => {
     const match = evaluateTransitions("in_progress", body, fm);
     expect(match).not.toBeNull();
     expect(match!.newStatus).toBe("steward_review");
+  });
+
+  it("steward_review → steward_final (requires assigned_steward)", () => {
+    const fm = makeTaskFrontmatter({
+      status: "steward_review",
+      assigned_steward: "steward-001",
+    });
+    const body = bodyWith("## Steward Review", "STATUS_SIGNAL: ready_for_steward_final");
+    const match = evaluateTransitions("steward_review", body, fm);
+    expect(match).not.toBeNull();
+    expect(match!.newStatus).toBe("steward_final");
   });
 
   it("steward_review → crafter_revision", () => {
@@ -266,6 +277,7 @@ describe("scrubSentinels", () => {
   it("replaces all known sentinel types", () => {
     const sentinels = [
       "STATUS_SIGNAL: ready_for_steward_review",
+      "STATUS_SIGNAL: ready_for_steward_final",
       "STATUS_SIGNAL: in_progress",
       "STATUS_SIGNAL: crafter_revision_requested",
       "STATUS_SIGNAL: ready_for_compound",

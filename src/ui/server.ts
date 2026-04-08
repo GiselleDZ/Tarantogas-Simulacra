@@ -17,6 +17,8 @@ import { createApprovalRoutes } from "./routes/approvals.js";
 import { createActivityRoutes } from "./routes/activity.js";
 import { createProjectRoutes } from "./routes/projects.js";
 import { createSystemRoutes } from "./routes/system.js";
+import { createPlanningRoutes } from "./routes/planning.js";
+import { createSession, sendMessage, getSession } from "../services/planningAgent.js";
 import { Watcher } from "../io/watcher.js";
 import { listProjects } from "../workflow/onboarding.js";
 import type { ApprovalRecord } from "./approvalWatcher.js";
@@ -39,7 +41,12 @@ type WsMessage =
   | { type: "task_update";        task: TaskRecord }
   | { type: "projects_update";    projects: ProjectRegistry[] }
   | { type: "system_snapshot";    data: SystemHealthSnapshot }
-  | { type: "system_update";      update: SystemHealthUpdate };
+  | { type: "system_update";      update: SystemHealthUpdate }
+  | { type: "planning_session";   sessionId: string }
+  | { type: "planning_stream";    sessionId: string; delta: string }
+  | { type: "planning_done";      sessionId: string }
+  | { type: "planning_project_created"; sessionId: string; slug: string; approvalId: string }
+  | { type: "planning_error";     sessionId: string; error: string };
 
 function broadcast(clients: Set<WebSocket>, msg: WsMessage): void {
   const payload = JSON.stringify(msg);
@@ -119,6 +126,7 @@ export async function startUIServer(options: UIServerOptions): Promise<void> {
   app.use("/api/activity", createActivityRoutes(activityWatcher));
   app.use("/api/projects", createProjectRoutes(taskWatcher));
   app.use("/api/system", createSystemRoutes(systemHealthWatcher));
+  app.use("/api/planning", createPlanningRoutes());
 
   // 404 handler — must come after all routes, returns JSON so the browser can parse it
   app.use((req, res) => {
@@ -142,12 +150,61 @@ export async function startUIServer(options: UIServerOptions): Promise<void> {
     ws.send(JSON.stringify({ type: "snapshot",          approvals: watcher.getAll() } satisfies WsMessage));
     ws.send(JSON.stringify({ type: "activity_snapshot", events:    activityWatcher.getRecent() } satisfies WsMessage));
     ws.send(JSON.stringify({ type: "system_snapshot",   data:      systemHealthWatcher.getSnapshot() } satisfies WsMessage));
+
+    ws.on("message", (raw) => {
+      try {
+        const msg = JSON.parse(String(raw)) as { type: string; sessionId?: string; text?: string };
+        void handlePlanningMessage(ws, msg);
+      } catch { /* ignore malformed messages */ }
+    });
+
     ws.on("close", () => { clients.delete(ws); });
     ws.on("error", () => { clients.delete(ws); });
   });
 
   await new Promise<void>((resolve) => { server.listen(options.port, "127.0.0.1", resolve); });
   console.log(`[UI] Simulacra dashboard: http://localhost:${options.port}`);
+}
+
+// ── Planning WebSocket Handler ────────────────────────────────────────────────
+
+async function handlePlanningMessage(
+  ws: WebSocket,
+  msg: { type: string; sessionId?: string; text?: string },
+): Promise<void> {
+  if (msg.type === "planning_start") {
+    const session = createSession();
+    const reply: WsMessage = { type: "planning_session", sessionId: session.id };
+    ws.send(JSON.stringify(reply));
+    return;
+  }
+
+  if (msg.type === "planning_message") {
+    const { sessionId, text } = msg;
+    if (sessionId === undefined || text === undefined) return;
+
+    const session = getSession(sessionId);
+    if (session === undefined) {
+      ws.send(JSON.stringify({ type: "planning_error", sessionId, error: "Session not found" } satisfies WsMessage));
+      return;
+    }
+
+    await sendMessage(sessionId, text, {
+      onText: (delta) => {
+        ws.send(JSON.stringify({ type: "planning_stream", sessionId, delta } satisfies WsMessage));
+      },
+      onDone: () => {
+        ws.send(JSON.stringify({ type: "planning_done", sessionId } satisfies WsMessage));
+      },
+      onProjectCreated: (slug, approvalId) => {
+        ws.send(JSON.stringify({ type: "planning_project_created", sessionId, slug, approvalId } satisfies WsMessage));
+      },
+      onError: (error) => {
+        ws.send(JSON.stringify({ type: "planning_error", sessionId, error } satisfies WsMessage));
+      },
+    });
+    return;
+  }
 }
 
 // ── Standalone entry ───────────────────────────────────────────────────────────

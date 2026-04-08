@@ -18,7 +18,7 @@ let systemEvents = [];
 let systemCosts = { global_total_usd: 0, per_project: [] };
 let systemLoaded = false;
 
-const PANE_DISPLAY = { approvals: 'grid', activity: 'flex', projects: 'flex', system: 'flex' };
+const PANE_DISPLAY = { approvals: 'grid', activity: 'flex', projects: 'flex', planning: 'flex', system: 'flex' };
 
 // ── DOM helpers ────────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -461,11 +461,9 @@ let selectedTaskId = null;
 let projectsLoaded = false;
 
 const LANES = [
-  { id: 'queued',      label: 'Queued',      statuses: ['pending', 'blocked'] },
-  { id: 'research',    label: 'Research',    statuses: ['research_pending', 'research_review'] },
-  { id: 'in_progress', label: 'In Progress', statuses: ['assigned', 'in_progress', 'crafter_revision'] },
-  { id: 'review',      label: 'Review',      statuses: ['steward_review', 'steward_final', 'compound', 'council_review', 'council_peer_review', 'drift_detected', 'drift_cleared'] },
-  { id: 'done',        label: 'Done',        statuses: ['done', 'cancelled'] },
+  { id: 'queued',  label: 'Queued',        statuses: ['pending', 'blocked', 'research_pending', 'research_review'] },
+  { id: 'active',  label: 'Active',        statuses: ['assigned', 'in_progress', 'crafter_revision'] },
+  { id: 'review',  label: 'Review & Done', statuses: ['steward_review', 'steward_final', 'compound', 'council_review', 'council_peer_review', 'drift_detected', 'drift_cleared', 'done', 'cancelled'] },
 ];
 
 async function loadProjects() {
@@ -674,32 +672,210 @@ async function taskAction(slug, taskId, action, btn) {
   }
 }
 
-// Add-project form
-$('add-project-btn').addEventListener('click', () => {
-  const form = $('add-project-form');
-  if (form.hidden) {
-    form.removeAttribute('hidden');
-    form.style.display = 'flex';
-  } else {
-    form.hidden = true;
-  }
+// ── Planning Tab ──────────────────────────────────────────────────────────────
+
+// Submission tabs
+document.querySelectorAll('.submission-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.submission-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const target = tab.dataset.tab;
+    $('submission-plan').hidden = (target !== 'plan');
+    $('submission-repo').hidden = (target !== 'repo');
+  });
 });
 
-$('add-project-cancel').addEventListener('click', () => {
-  $('add-project-form').hidden = true;
-  $('add-project-form').reset();
-});
-
-$('add-project-form').addEventListener('submit', async (e) => {
+// Existing repo form
+$('submission-repo').addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = $('proj-name').value.trim();
   const projPath = $('proj-path').value.trim();
   const crafterTypes = $('proj-crafters').value.split(',').map(s => s.trim()).filter(Boolean);
   await apiPost('/api/projects', { name, path: projPath, crafterTypes });
-  $('add-project-form').hidden = true;
-  $('add-project-form').reset();
+  $('submission-repo').reset();
   await loadProjects();
 });
+
+// ── Planning Chat ─────────────────────────────────────────────────────────────
+
+let planningSessionId = null;
+let planningStreaming = false;
+
+// Start planning button
+$('start-plan-chat').addEventListener('click', () => {
+  $('planning-messages').innerHTML = '';
+  planningSessionId = null;
+  planningStreaming = false;
+
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'planning_start' }));
+  }
+});
+
+// Send message
+$('planning-send').addEventListener('click', sendPlanningMessage);
+$('planning-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendPlanningMessage();
+  }
+});
+
+function sendPlanningMessage() {
+  if (planningStreaming) return;
+  const input = $('planning-input');
+  const text = input.value.trim();
+  if (!text || !planningSessionId) return;
+
+  appendPlanningMessage('user', text);
+  input.value = '';
+
+  ws.send(JSON.stringify({
+    type: 'planning_message',
+    sessionId: planningSessionId,
+    text,
+  }));
+  planningStreaming = true;
+  $('planning-send').disabled = true;
+}
+
+// File upload from sidebar upload zone
+$('planning-file-input').addEventListener('change', (e) => handleFileUpload(e));
+// File attach from chat input area
+$('planning-attach-input').addEventListener('change', (e) => handleFileUpload(e));
+
+async function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  // If no session yet, start one
+  if (!planningSessionId) {
+    planningStreaming = false;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'planning_start' }));
+    }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+
+  if (!planningSessionId) {
+    $('upload-status').textContent = 'Error: no session';
+    e.target.value = '';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('sessionId', planningSessionId);
+
+  $('upload-status').textContent = `Uploading: ${file.name}...`;
+  appendPlanningMessage('system', `Uploading: ${file.name}...`);
+
+  try {
+    const res = await fetch('/api/planning/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (res.ok) {
+      $('upload-status').textContent = `Uploaded: ${data.name}`;
+      appendPlanningMessage('system', `Uploaded: ${data.name} (${data.length} chars)`);
+    } else {
+      $('upload-status').textContent = `Failed: ${data.error}`;
+      appendPlanningMessage('system', `Upload failed: ${data.error}`);
+    }
+  } catch (err) {
+    $('upload-status').textContent = `Error: ${err.message}`;
+    appendPlanningMessage('system', `Upload error: ${err.message}`);
+  }
+
+  e.target.value = '';
+}
+
+function appendPlanningMessage(role, text) {
+  const container = $('planning-messages');
+  const div = document.createElement('div');
+  div.className = `planning-msg planning-msg-${role}`;
+  div.textContent = text;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendStreamDelta(delta) {
+  const container = $('planning-messages');
+  let current = container.querySelector('.planning-msg-assistant.streaming');
+  if (!current) {
+    current = document.createElement('div');
+    current.className = 'planning-msg planning-msg-assistant streaming';
+    container.appendChild(current);
+  }
+  current.textContent += delta;
+  container.scrollTop = container.scrollHeight;
+}
+
+function finishStream() {
+  const streaming = $('planning-messages').querySelector('.streaming');
+  if (streaming) streaming.classList.remove('streaming');
+  planningStreaming = false;
+  $('planning-send').disabled = false;
+}
+
+function handlePlanningWsMessage(msg) {
+  if (msg.type === 'planning_session') {
+    planningSessionId = msg.sessionId;
+    appendPlanningMessage('assistant', 'Hello! Tell me about the project you want to create. You can describe it here or upload an implementation plan.');
+  } else if (msg.type === 'planning_stream') {
+    appendStreamDelta(msg.delta);
+  } else if (msg.type === 'planning_done') {
+    finishStream();
+  } else if (msg.type === 'planning_project_created') {
+    appendPlanningMessage('system', `Project "${msg.slug}" created! It's now in the approval queue.`);
+    finishStream();
+    loadProjects();
+  } else if (msg.type === 'planning_error') {
+    appendPlanningMessage('system', `Error: ${msg.error}`);
+    finishStream();
+  }
+}
+
+// ── Resizable Sidebar ─────────────────────────────────────────────────────────
+{
+  const handle = $('projects-resize');
+  const sidebar = $('projects-sidebar');
+  const MIN_W = 160;
+  const MAX_W = 500;
+
+  // Restore persisted width
+  const saved = localStorage.getItem('simulacra-sidebar-width');
+  if (saved) sidebar.style.setProperty('--sidebar-width', saved + 'px');
+
+  let dragging = false;
+  let startX = 0;
+  let startW = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startW = sidebar.getBoundingClientRect().width;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const delta = e.clientX - startX;
+    const newW = Math.max(MIN_W, Math.min(MAX_W, startW + delta));
+    sidebar.style.setProperty('--sidebar-width', newW + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    const w = sidebar.getBoundingClientRect().width;
+    localStorage.setItem('simulacra-sidebar-width', String(Math.round(w)));
+  });
+}
 
 // ── System Health Tab ─────────────────────────────────────────────────────────
 function formatUptime(ms) {
@@ -930,6 +1106,8 @@ function connectWs() {
         systemCosts = u.costs;
         if (activeTab === 'system') renderCostSummary();
       }
+    } else if (msg.type?.startsWith('planning_')) {
+      handlePlanningWsMessage(msg);
     }
   });
 }

@@ -10,6 +10,14 @@ roles:
       - filesystem   # read-only to knowledge/ and state/ — scoped in MCP config
     check_interval_tool_uses: 10
     drift_threshold_override: null  # uses global thresholds from simulacra.yaml
+    baseline_traits:
+      - "Asks clarifying questions before making plans"
+      - "Consults the knowledge base before forming opinions"
+      - "Acknowledges uncertainty openly"
+      - "Escalates to Tarantoga rather than making unilateral high-stakes decisions"
+      - "Commissions research before assigning tasks — never skips the research gate"
+      - "Checks token budgets and splits tasks that exceed 60k tokens"
+      - "Conducts Compound step interviews with genuine curiosity, not box-ticking"
 
   research:
     permitted_mcps:
@@ -18,6 +26,13 @@ roles:
       - filesystem   # read-only access to project source — scoped in MCP config
     check_interval_tool_uses: 8
     drift_threshold_override: null
+    baseline_traits:
+      - "Estimates token budget before starting"
+      - "Cites sources explicitly"
+      - "Acknowledges limits of available evidence"
+      - "Asks for scope clarification before beginning if the question is unclear"
+      - "Reports findings without editorialising beyond the evidence"
+      - "Writes to Research Output and signals RESEARCH_SIGNAL: complete"
 
   steward:
     permitted_mcps:
@@ -26,6 +41,13 @@ roles:
       - mirdan
     check_interval_tool_uses: 8
     drift_threshold_override: null
+    baseline_traits:
+      - "Reviews work against defined acceptance criteria, not personal preference"
+      - "Checks that Crafters followed research_doc_refs before implementing"
+      - "Asks for revisions with specific, actionable feedback"
+      - "Does not rubber-stamp — findings reflect actual work quality"
+      - "Takes drift assessment seriously, not as a box to check"
+      - "Logs DECISION: lines for significant review findings"
 
   crafter:
     # Crafters get filesystem access scoped to their assigned project root only.
@@ -37,6 +59,15 @@ roles:
       - mirdan
     check_interval_tool_uses: 6
     drift_threshold_override: null
+    baseline_traits:
+      - "Reads research documents before opening any implementation file"
+      - "Reads the full task before starting"
+      - "Checks the knowledge base before implementing"
+      - "Logs PHASE: and DECISION: lines consistently"
+      - "Flags scope issues immediately rather than silently expanding scope"
+      - "Submits design_decision approvals for non-trivial choices"
+      - "Implements exactly what was specified — no gold-plating"
+      - "Participates genuinely in the Compound step"
 
 # ── Crafter Types ─────────────────────────────────────────────────────────────
 # Each crafter type may specify additional MCPs beyond the base crafter set.

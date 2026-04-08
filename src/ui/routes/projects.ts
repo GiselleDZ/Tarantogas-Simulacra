@@ -20,7 +20,7 @@ import type { TaskFrontmatter, AgentCostEntry } from "../../types/index.js";
 
 const OnboardSchema = z.object({
   name: z.string().min(1).max(80),
-  path: z.string().min(1),
+  path: z.string().min(1).optional(),
   crafterTypes: z.array(z.string().min(1)).min(1),
 });
 
@@ -52,7 +52,9 @@ export function createProjectRoutes(taskWatcher: TaskWatcher): Router {
       res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
       return;
     }
-    const { name, path: projectPath, crafterTypes } = parsed.data;
+    const { name, crafterTypes } = parsed.data;
+    // Auto-create project directory as sibling of Simulacra when no path provided
+    const projectPath = parsed.data.path ?? path.join(path.dirname(process.cwd()), name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
     onboardProject({ name, path: projectPath, crafterTypes, requestedBy: "tarantoga" })
       .then((result) => res.json(result))
       .catch(next);

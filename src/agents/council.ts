@@ -15,10 +15,12 @@ import type {
   AgentContext,
   AgentResult,
 } from "../types/index.js";
+import type { DriftMonitor } from "../services/driftMonitor.js";
 
 interface SpawnDependencies {
   readonly rolesConfig: Parameters<typeof spawnAgent>[1]["rolesConfig"];
   readonly simulacraConfig: Parameters<typeof spawnAgent>[1]["simulacraConfig"];
+  readonly driftMonitor?: DriftMonitor;
 }
 
 /**
@@ -44,6 +46,7 @@ export async function spawnCouncilForCompound(
   };
 
   await spawnAgent(context, { ...deps, onExit });
+  await deps.driftMonitor?.establishBaselineFromRoleConfig(context.agent_id, context.role, deps.rolesConfig);
 }
 
 /**
@@ -68,6 +71,7 @@ export async function spawnCouncilForReview(
   };
 
   await spawnAgent(context, { ...deps, onExit });
+  await deps.driftMonitor?.establishBaselineFromRoleConfig(context.agent_id, context.role, deps.rolesConfig);
 }
 
 /**
@@ -92,6 +96,7 @@ export async function spawnCouncilForPeerReview(
   };
 
   await spawnAgent(context, { ...deps, onExit });
+  await deps.driftMonitor?.establishBaselineFromRoleConfig(context.agent_id, context.role, deps.rolesConfig);
 }
 
 /**
@@ -117,6 +122,7 @@ export async function spawnCouncilForResearchReview(
   };
 
   await spawnAgent(context, { ...deps, onExit });
+  await deps.driftMonitor?.establishBaselineFromRoleConfig(context.agent_id, context.role, deps.rolesConfig);
 }
 
 /**
@@ -143,6 +149,7 @@ export async function spawnCouncilForResearchCommission(
   };
 
   await spawnAgent(context, { ...deps, onExit });
+  await deps.driftMonitor?.establishBaselineFromRoleConfig(context.agent_id, context.role, deps.rolesConfig);
 }
 
 /**
@@ -168,6 +175,7 @@ export async function spawnCouncilForKickoff(
   };
 
   await spawnAgent(context, { ...deps, onExit });
+  await deps.driftMonitor?.establishBaselineFromRoleConfig(context.agent_id, context.role, deps.rolesConfig);
 }
 
 /**

@@ -162,9 +162,50 @@ export const TRANSITION_TABLE: readonly TransitionRule[] = [
 
 // ── Section Parsing ───────────────────────────────────────────────────────────
 
+/**
+ * Canonical task section headers. Only these are treated as section boundaries
+ * when extracting content. Agent-written sub-headers (e.g. ## Summary inside
+ * ## Research Output) are NOT section boundaries and must not terminate extraction.
+ */
+const TASK_SECTION_HEADERS: ReadonlySet<string> = new Set([
+  // Structural sections (task template)
+  "## Task Description",
+  "## Reference Files",
+  "## Acceptance Criteria",
+  "## Out of Scope",
+  // Pipeline sections (from TRANSITION_TABLE)
+  "## Council Research",
+  "## Research Output",
+  "## Council Research Review",
+  "## Crafter Work",
+  "## Steward Review",
+  "## Steward Final",
+  "## Compound Step",
+  "## Council Review",
+  "## Council Peer Review",
+  // Recovery
+  "## Recovery Note",
+]);
+
+/**
+ * Find the character index of the next known task section header after `offset`.
+ * Returns `body.length` if no known section header follows.
+ */
+function findNextTaskSection(body: string, offset: number): number {
+  let earliest = body.length;
+  for (const header of TASK_SECTION_HEADERS) {
+    const idx = body.indexOf("\n" + header, offset);
+    if (idx !== -1 && idx < earliest) {
+      earliest = idx;
+    }
+  }
+  return earliest;
+}
+
 /** Extract the content of a named section from a markdown body.
  *  Concatenates ALL occurrences — a section may appear more than once
  *  (e.g. multiple crafter work blocks appended to the same task file).
+ *  Only terminates at known task section headers, not arbitrary ## headers.
  */
 function extractSection(body: string, sectionHeader: string): string {
   const segments: string[] = [];
@@ -175,11 +216,7 @@ function extractSection(body: string, sectionHeader: string): string {
     if (headerIndex === -1) break;
 
     const contentStart = headerIndex + sectionHeader.length;
-    const nextHeaderMatch = body.slice(contentStart).match(/\n## /);
-    const contentEnd =
-      nextHeaderMatch?.index !== undefined
-        ? contentStart + nextHeaderMatch.index
-        : body.length;
+    const contentEnd = findNextTaskSection(body, contentStart);
 
     segments.push(body.slice(contentStart, contentEnd));
     searchFrom = contentEnd;
@@ -215,13 +252,9 @@ function clearSentinel(body: string, section: string, sentinel: string): string 
   }
   if (lastSectionStart === -1) return body;
 
-  // Determine the end of the last section
+  // Determine the end of the last section (only known task headers terminate)
   const contentStart = lastSectionStart + section.length;
-  const nextHeaderMatch = body.slice(contentStart).match(/\n## /);
-  const sectionEnd =
-    nextHeaderMatch?.index !== undefined
-      ? contentStart + nextHeaderMatch.index
-      : body.length;
+  const sectionEnd = findNextTaskSection(body, contentStart);
 
   // Find the last occurrence of the sentinel within this section
   const sectionSlice = body.slice(lastSectionStart, sectionEnd);
@@ -312,17 +345,14 @@ function collapseSectionToStub(body: string, sectionHeader: string, stub: string
   const firstIdx = body.indexOf(sectionHeader);
   if (firstIdx === -1) return body;
 
-  // Find the end of the last occurrence of this section
+  // Find the end of the last occurrence of this section (only known task headers terminate)
   let lastOccurrenceEnd = firstIdx; // will be updated in the loop
   let searchFrom = 0;
   while (true) {
     const idx = body.indexOf(sectionHeader, searchFrom);
     if (idx === -1) break;
     const contentStart = idx + sectionHeader.length;
-    const nextMatch = body.slice(contentStart).match(/\n## /);
-    lastOccurrenceEnd = nextMatch?.index !== undefined
-      ? contentStart + nextMatch.index
-      : body.length;
+    lastOccurrenceEnd = findNextTaskSection(body, contentStart);
     searchFrom = idx + 1;
   }
 

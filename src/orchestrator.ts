@@ -91,7 +91,11 @@ interface OrchestratorConfig {
 interface RolesConfig {
   readonly roles: Record<
     string,
-    { readonly permitted_mcps: readonly string[]; readonly check_interval_tool_uses: number }
+    {
+      readonly permitted_mcps: readonly string[];
+      readonly check_interval_tool_uses: number;
+      readonly baseline_traits?: readonly string[];
+    }
   >;
   readonly crafter_types: Record<string, { readonly additional_mcps: readonly string[] }>;
 }
@@ -432,12 +436,12 @@ async function handleTransition(
 
 async function handleDriftEvent(event: DriftEvent): Promise<void> {
   console.log(
-    `[DriftMonitor] Agent ${event.agent_id}: score=${event.score.toFixed(3)} severity=${event.severity} action=${event.action_taken}`,
+    `[DriftMonitor] Agent ${event.agent_id}: type=${event.drift_type} score=${event.score.toFixed(3)} severity=${event.severity} action=${event.action_taken}`,
   );
 
   if (event.action_taken === "halt_and_reset") {
     console.error(
-      `[Orchestrator] HALT — agent ${event.agent_id} has drifted critically. Manual intervention required.`,
+      `[Orchestrator] HALT — agent ${event.agent_id} has drifted critically (${event.drift_type}). Manual intervention required.`,
     );
   }
 }
@@ -530,25 +534,26 @@ async function main(): Promise<void> {
     await mcpProxy.start();
   }
 
-  const spawnDeps = {
-    rolesConfig,
-    simulacraConfig: config,
-    ...(mcpProxy !== null ? { proxyToken: mcpProxy.token } : {}),
-  };
-
-  // 2. Crash recovery
-  const crashed = await recoverCrashedAgents();
-  if (crashed.length > 0) {
-    console.warn(`[Orchestrator] Recovered ${crashed.length} crashed agent(s).`);
-  }
-  await recoverOrphanedReviewTasks(config, rolesConfig, spawnDeps);
-
-  // 3. Start DriftMonitor
+  // 2. Start DriftMonitor (before spawnDeps so baselines are established at spawn)
   const driftMonitor = new DriftMonitor({
     thresholds: config.drift.thresholds,
     onDriftEvent: handleDriftEvent,
   });
   driftMonitor.start();
+
+  const spawnDeps = {
+    rolesConfig,
+    simulacraConfig: config,
+    driftMonitor,
+    ...(mcpProxy !== null ? { proxyToken: mcpProxy.token } : {}),
+  };
+
+  // 3. Crash recovery
+  const crashed = await recoverCrashedAgents();
+  if (crashed.length > 0) {
+    console.warn(`[Orchestrator] Recovered ${crashed.length} crashed agent(s).`);
+  }
+  await recoverOrphanedReviewTasks(config, rolesConfig, spawnDeps);
 
   // 4. Start approval console (+ optional UI server)
   const uiEnabled = config.ui?.enabled === true;

@@ -271,7 +271,73 @@ describe("evaluateTransitions — edge cases", () => {
   });
 });
 
-// ── Suite 2d: scrubSentinels ────────────────────────────────────────────────
+// ── Suite 2d: Section extraction with agent sub-headers ─────────────────────
+
+describe("evaluateTransitions — agent-written sub-headers inside sections", () => {
+  it("research_pending → research_review when ## Research Output contains ## sub-headers", () => {
+    const fm = makeTaskFrontmatter({ status: "research_pending" });
+    const body = [
+      "## Research Output",
+      "",
+      "PHASE: starting research",
+      "",
+      "## Summary",
+      "Research found important things about validation patterns.",
+      "",
+      "## Evidence",
+      "Evidence details: Chakra UI v3 Field component supports maxLength natively.",
+      "",
+      "## Gaps and Uncertainties",
+      "No gaps identified.",
+      "",
+      "## Recommendation",
+      "Use dual enforcement: HTML maxLength + JS submit guard.",
+      "",
+      "RESEARCH_SIGNAL: complete",
+      "",
+      "## Crafter Work",
+      "",
+    ].join("\n");
+    const match = evaluateTransitions("research_pending", body, fm);
+    expect(match).not.toBeNull();
+    expect(match!.newStatus).toBe("research_review");
+  });
+
+  it("sentinel in section with sub-headers but no following task section is found", () => {
+    const fm = makeTaskFrontmatter({ status: "research_pending" });
+    // No ## Crafter Work after — sentinel should still be found at end of body
+    const body = [
+      "## Research Output",
+      "",
+      "## Summary",
+      "Findings here.",
+      "",
+      "RESEARCH_SIGNAL: complete",
+    ].join("\n");
+    const match = evaluateTransitions("research_pending", body, fm);
+    expect(match).not.toBeNull();
+    expect(match!.newStatus).toBe("research_review");
+  });
+
+  it("known task section headers still correctly terminate sections", () => {
+    const fm = makeTaskFrontmatter({ status: "research_pending" });
+    // Sentinel is in ## Crafter Work, NOT in ## Research Output
+    const body = [
+      "## Research Output",
+      "",
+      "No sentinel here.",
+      "",
+      "## Crafter Work",
+      "",
+      "RESEARCH_SIGNAL: complete",
+    ].join("\n");
+    const match = evaluateTransitions("research_pending", body, fm);
+    // Should NOT match — sentinel is in wrong section
+    expect(match).toBeNull();
+  });
+});
+
+// ── Suite 2e: scrubSentinels ────────────────────────────────────────────────
 
 describe("scrubSentinels", () => {
   it("replaces all known sentinel types", () => {

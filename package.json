@@ -27,11 +27,15 @@
     "chokidar": "^3.6.0",
     "express": "^5.2.1",
     "js-yaml": "^4.1.0",
+    "mammoth": "^1.12.0",
+    "multer": "^2.1.1",
+    "pdf-parse": "^2.2.2",
     "ws": "^8.19.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
+    "@types/multer": "^2.1.0",
     "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",

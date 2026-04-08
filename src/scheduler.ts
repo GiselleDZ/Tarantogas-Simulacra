@@ -63,6 +63,7 @@ const COUNCIL_RESEARCH_GRACE_MS = 30_000;
 interface SchedulerDependencies {
   readonly rolesConfig: Parameters<typeof spawnCrafter>[5]["rolesConfig"];
   readonly simulacraConfig: Parameters<typeof spawnCrafter>[5]["simulacraConfig"];
+  readonly driftMonitor?: import("./services/driftMonitor.js").DriftMonitor;
   readonly onAgentResult: Parameters<typeof spawnCrafter>[6];
   readonly onOrphanedReviewTask?: (filePath: string, status: TaskStatus) => Promise<void>;
   /** Max concurrent agents per project slug. Default: no per-project cap. */

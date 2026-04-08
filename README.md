@@ -38,7 +38,7 @@ Simulacra has five tiers. One is human. Four are AI. Every agent operates within
 
 ### Tarantoga
 
-Tarantoga is the human running Simulacra. Every significant decision traces back to them. They interact through an inbox at `state/inbox/tarantoga/` and through approval documents at `state/approvals/`. They are the final authority on scope changes, new MCP servers, new project assignments, and anything not covered by an existing plan.
+Tarantoga is the human running Simulacra. Every significant decision traces back to them. They interact through the dashboard UI (approvals, project planning, system monitoring) and through approval documents at `state/approvals/`. They are the final authority on scope changes, new MCP servers, new project assignments, and anything not covered by an existing plan.
 
 ### The Council
 
@@ -134,7 +134,8 @@ COUNCIL_SIGNAL: APPROVED                   ← Council approves (author or peer)
 ### Full state machine
 
 ```
-pending → assigned → in_progress → steward_review → crafter_revision
+pending → research_pending → research_review → pending (with research complete)
+       → assigned → in_progress → steward_review → crafter_revision
        → steward_final → compound → council_review → council_peer_review → done
 
 Drift intercepts steward_final:
@@ -160,12 +161,14 @@ Both research papers require direct access to activation tensors. The Claude API
 
 ### Role fingerprints
 
-Every agent role has a fingerprint defined in its `CLAUDE.md`:
+Every agent role has a fingerprint defined in its `CLAUDE.md` and `config/roles.yaml`:
 
-- **`baseline_traits`** — expected on-role behavior, in natural language
+- **`baseline_traits`** — expected on-role behavior, in natural language. Used to generate baseline embeddings at spawn time.
 - **`drift_indicators`** — specific behaviors that signal something is wrong
-- **`probe_questions`** — 3–5 questions used for both baseline establishment and periodic self-assessment
+- **`probe_questions`** — role-identity probes (7 questions) + constraint-retention probes (2 questions) used for self-assessment
 - **`check_interval_tool_uses`** — how many tool uses between Tier 1 self-assessments
+
+Constraint-retention probes ask agents to restate specific constraints from their task brief (acceptance criteria, out-of-scope boundaries). These are scored as `drift_type: "constraint_decay"` — a separate signal from persona drift, catching whether the agent internalized its task constraints rather than just knowing its role.
 
 ### Tier 1 — Automated mid-task self-assessment
 
@@ -307,11 +310,13 @@ cp config/simulacra.example.yaml config/simulacra.yaml
 ### Run
 
 ```bash
-npm start              # Run directly via tsx (development)
+npm start              # Run directly via tsx (development) — UI at http://localhost:4242
 npm run orch:start     # Run as a managed process (production)
 npm run orch:stop      # Stop the managed process
 npm run orch:status    # Check orchestrator status
 npm run orch:logs      # Tail orchestrator logs
+npm run ui             # Run dashboard UI standalone (no orchestrator)
+npm test               # Run test suite (264 tests)
 ```
 
 ### MCP servers
@@ -324,6 +329,28 @@ Four MCP servers are configured in `simulacra.example.yaml` and must be provisio
 | `brave-search` | Web search for Research Agents (requires a Brave API key) |
 | `context7` | Up-to-date library documentation for all AI agents |
 | `mirdan` | Code quality validation for Stewards and Council |
+
+---
+
+## Dashboard UI
+
+Simulacra includes a real-time web dashboard at `http://localhost:4242` (configurable). All state changes are pushed via WebSocket — no polling. The UI uses a dark monochrome theme with orange accent.
+
+### Tabs
+
+| Tab | Purpose |
+|-----|---------|
+| **Approvals** | Two-pane approval queue. View request details, load research context, decide (approve/decline/defer/needs_research). |
+| **Activity** | Real-time feed of agent PHASE and DECISION log lines. Filterable by role (council/steward/crafter/research). |
+| **Projects** | Project list sidebar (resizable) + task pipeline kanban. Three columns: Queued, Active, Review & Done. Task cards show status badges. Click a task for full detail view with block/unblock actions. |
+| **Planning** | Project submission. Left panel: form with two modes (Plan or Existing Repo). Right panel: planning chat agent for discussing and defining new projects. File upload (.md, .pdf, .docx, .txt) supported. |
+| **System** | Live agents table, drift events, cost tracking (global + per-project), system event log (spawns, completions, failures, timeouts). |
+
+### Planning Chat
+
+The Planning tab includes a conversational agent for project submission. Instead of requiring an existing repo, you can upload an implementation plan or roadmap and discuss the project with the agent. When ready, the agent creates the project directory (as a sibling of Simulacra), writes the implementation plan, and triggers normal onboarding.
+
+The planning chat runs as a Claude Code subprocess — it uses your Claude Code subscription, not separate API tokens.
 
 ---
 
@@ -365,6 +392,8 @@ simulacra/
 │   │   └── onboarding.ts            ← Project onboarding sequence
 │   ├── services/
 │   │   ├── driftMonitor.ts          ← Automated drift scoring (not an AI agent)
+│   │   ├── planningAgent.ts         ← Claude Code subprocess chat for project planning
+│   │   ├── documentParser.ts        ← Parse .md/.txt/.pdf/.docx uploads to text
 │   │   └── mcpEvaluator.ts          ← MCP registry query and recommendation
 │   ├── learning/
 │   │   └── councilLearning.ts       ← Prompt augmentation only; never alters routing

@@ -162,6 +162,10 @@ Future Research Agents will start from what you wrote. Leave good notes.
 4. Have I checked the knowledge base before searching externally?
 5. Am I presenting uncertain findings as settled? If so, where?
 6. Have I written anything that goes beyond what the evidence actually supports?
+7. What specific boundaries were placed on the research scope?
+8. What is the token budget ceiling, and are you within it?
+
+Questions 7-8 are constraint-retention checks — restate the actual constraints from your task file, not your general understanding of the role.
 
 **Self-assessment interval:** Every 8 tool uses, and once at session end.
 

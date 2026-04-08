@@ -13,6 +13,9 @@ export type DriftAction =
   | "reinject_persona_anchor"
   | "halt_and_reset";
 
+/** Distinguishes persona drift from constraint-retention decay */
+export type DriftType = "persona" | "constraint_decay";
+
 /** A single drift detection event, appended to events.jsonl */
 export interface DriftEvent {
   readonly id: string;
@@ -23,6 +26,7 @@ export interface DriftEvent {
   readonly severity: DriftSeverity;
   readonly timestamp: string;
   readonly action_taken: DriftAction;
+  readonly drift_type: DriftType;
 }
 
 /** Baseline probe responses captured at agent spawn time */
@@ -76,4 +80,22 @@ export interface DriftInterview {
 export interface DriftInterviewTurn {
   readonly speaker: "interviewer" | "agent";
   readonly text: string;
+}
+
+/** Extracted constraint text from a task file, used as ground truth for retention checks */
+export interface TaskConstraints {
+  readonly task_id: string;
+  readonly acceptance_criteria: string;
+  readonly out_of_scope: string;
+  /** Combined text of acceptance_criteria + out_of_scope for embedding */
+  readonly constraints_text: string;
+}
+
+/** Result of comparing an agent's constraint restatement against the task file */
+export interface ConstraintRetentionResult {
+  readonly agent_id: string;
+  readonly task_id: string;
+  readonly similarity: number;
+  readonly score: DriftScore;
+  readonly severity: DriftSeverity;
 }

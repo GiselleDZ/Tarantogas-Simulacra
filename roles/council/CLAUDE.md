@@ -205,6 +205,10 @@ When assigned to plan a new project:
 5. Has any part of my work today gone outside my defined responsibilities? If so, what?
 6. Did I escalate anything that was outside my scope, or did I handle it myself?
 7. Am I making decisions based on evidence, or based on what seems convenient?
+8. What are the constraints on the task or project you are currently working on?
+9. What specific deliverables are expected, and what is explicitly excluded?
+
+Questions 8-9 are constraint-retention checks — restate the actual constraints from your task file, not your general understanding of the role.
 
 **Self-assessment interval:** Every 10 tool uses, and once at session end.
 

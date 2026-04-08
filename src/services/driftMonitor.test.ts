@@ -5,6 +5,8 @@ import {
   scoreToDriftSeverity,
   severityToAction,
   embedResponses,
+  extractProbeResponses,
+  extractTaskConstraints,
 } from "./driftMonitor.js";
 
 describe("cosineSimilarity", () => {
@@ -138,5 +140,148 @@ describe("embedResponses", () => {
     const v1 = await embedResponses(["a is test"]);
     const v2 = await embedResponses(["test"]);
     expect(v1).toEqual(v2);
+  });
+});
+
+describe("extractProbeResponses", () => {
+  it("extracts numbered responses from standard self-check format", () => {
+    const body = `## Drift Self-Assessment
+
+1. **What is my task?**
+   I am working on task-001, the monorepo scaffold.
+
+2. **Did I read research docs?**
+   Yes, I read the implementation plan before starting.
+
+3. **Have I made changes outside my root?**
+   No, all files are within the project directory.
+`;
+    const responses = extractProbeResponses(body);
+    expect(responses).toHaveLength(3);
+    expect(responses[0]).toContain("I am working on task-001");
+    expect(responses[1]).toContain("Yes, I read the implementation plan");
+    expect(responses[2]).toContain("No, all files are within");
+  });
+
+  it("handles missing trailing newline", () => {
+    const body = `1. **Question one?**
+   Answer one.
+
+2. **Question two?**
+   Answer two.`;
+    const responses = extractProbeResponses(body);
+    expect(responses).toHaveLength(2);
+    expect(responses[0]).toContain("Answer one");
+    expect(responses[1]).toContain("Answer two");
+  });
+
+  it("returns empty array for empty body", () => {
+    expect(extractProbeResponses("")).toEqual([]);
+  });
+
+  it("returns empty array for body with no numbered questions", () => {
+    expect(extractProbeResponses("Just some plain text\nwith no questions.")).toEqual([]);
+  });
+
+  it("handles multi-line answers spanning multiple paragraphs", () => {
+    const body = `1. **Did I submit approvals?**
+   I made two design decisions without formal approval:
+   - Using tsc --noEmit instead of tsc -b
+   - Defining NotePayload interfaces
+   Both are within scope and low-risk.
+`;
+    const responses = extractProbeResponses(body);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toContain("two design decisions");
+    expect(responses[0]).toContain("Both are within scope");
+  });
+});
+
+describe("extractTaskConstraints", () => {
+  it("extracts acceptance criteria and out of scope from standard task format", () => {
+    const body = `## Task Description
+
+Build the monorepo scaffold.
+
+## Acceptance Criteria
+
+1. pnpm install succeeds at the repo root
+2. All TypeScript strict mode — no any types
+
+## Out of Scope
+
+- No crypto implementation
+- No UI beyond a placeholder heading
+
+## Crafter Work
+
+Started implementing...
+`;
+    const result = extractTaskConstraints("task-001", body);
+    expect(result.task_id).toBe("task-001");
+    expect(result.acceptance_criteria).toContain("pnpm install succeeds");
+    expect(result.acceptance_criteria).toContain("TypeScript strict mode");
+    expect(result.out_of_scope).toContain("No crypto implementation");
+    expect(result.out_of_scope).toContain("No UI beyond a placeholder");
+    expect(result.constraints_text).toContain("pnpm install");
+    expect(result.constraints_text).toContain("No crypto");
+  });
+
+  it("returns empty strings when sections are missing", () => {
+    const body = `## Task Description
+
+A task with no criteria sections.
+
+## Crafter Work
+
+Working on it.
+`;
+    const result = extractTaskConstraints("task-099", body);
+    expect(result.acceptance_criteria).toBe("");
+    expect(result.out_of_scope).toBe("");
+    expect(result.constraints_text).toBe("");
+  });
+
+  it("handles task with only acceptance criteria, no out of scope", () => {
+    const body = `## Acceptance Criteria
+
+1. Tests pass
+2. No regressions
+
+## Crafter Work
+
+Done.
+`;
+    const result = extractTaskConstraints("task-050", body);
+    expect(result.acceptance_criteria).toContain("Tests pass");
+    expect(result.out_of_scope).toBe("");
+  });
+});
+
+describe("constraint retention scoring", () => {
+  it("returns high similarity when agent accurately restates constraints", async () => {
+    const truthText = "pnpm install succeeds at the repo root with no errors. All TypeScript strict mode, no any types.";
+    const agentRestatement = "The acceptance criteria require pnpm install to succeed at the root and TypeScript strict mode with no any types.";
+
+    const truthVector = await embedResponses([truthText]);
+    const agentVector = await embedResponses([agentRestatement]);
+    const similarity = cosineSimilarity(truthVector, agentVector);
+    const score = similarityToDriftScore(similarity);
+
+    // Similar vocabulary should produce low drift score
+    expect(score).toBeLessThan(0.4);
+  });
+
+  it("returns low similarity when agent restates unrelated content", async () => {
+    const truthText = "pnpm install succeeds at the repo root with no errors. All TypeScript strict mode, no any types.";
+    const agentRestatement = "I am a research agent focused on investigating database migration patterns and query optimization strategies.";
+
+    const truthVector = await embedResponses([truthText]);
+    const agentVector = await embedResponses([agentRestatement]);
+    const similarity = cosineSimilarity(truthVector, agentVector);
+    const score = similarityToDriftScore(similarity);
+
+    // Unrelated content should produce higher drift score than accurate restatement
+    expect(score).toBeGreaterThan(0.3);
   });
 });

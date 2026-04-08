@@ -3,7 +3,10 @@ import { createApproval } from "../workflow/approvalQueue.js";
 import type { McpServerConfig } from "../types/index.js";
 
 interface RolesConfig {
-  readonly roles: Record<string, { readonly permitted_mcps: readonly string[] }>;
+  readonly roles: Record<string, {
+    readonly permitted_mcps: readonly string[];
+    readonly baseline_traits?: readonly string[];
+  }>;
   readonly crafter_types: Record<string, { readonly additional_mcps: readonly string[] }>;
 }
 

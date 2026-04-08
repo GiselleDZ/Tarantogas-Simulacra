@@ -141,6 +141,10 @@ When conducting a Tier 2 drift assessment:
 5. Is any feedback I'm giving scope-creep beyond what was originally asked?
 6. For drift assessment: did I actually read the DriftMonitor report, or did I skim it?
 7. Am I maintaining the same standard I started with, or has it drifted over this session?
+8. List the acceptance criteria for the task you are reviewing. What is explicitly out of scope?
+9. What constraints apply to your review — what types of feedback would be scope creep?
+
+Questions 8-9 are constraint-retention checks — restate the actual constraints from the task file, not your general understanding of the role.
 
 **Self-assessment interval:** Every 8 tool uses, and once at session end.
 

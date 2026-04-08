@@ -24,6 +24,7 @@ interface RolesConfig {
     {
       readonly permitted_mcps: readonly string[];
       readonly check_interval_tool_uses: number;
+      readonly baseline_traits?: readonly string[];
     }
   >;
   readonly crafter_types: Record<

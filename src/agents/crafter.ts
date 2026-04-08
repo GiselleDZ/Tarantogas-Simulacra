@@ -6,10 +6,12 @@
  */
 import { spawnAgent } from "./spawner.js";
 import type { AgentContext, AgentResult } from "../types/index.js";
+import type { DriftMonitor } from "../services/driftMonitor.js";
 
 interface SpawnDependencies {
   readonly rolesConfig: Parameters<typeof spawnAgent>[1]["rolesConfig"];
   readonly simulacraConfig: Parameters<typeof spawnAgent>[1]["simulacraConfig"];
+  readonly driftMonitor?: DriftMonitor;
 }
 
 /**
@@ -36,6 +38,7 @@ export async function spawnCrafter(
   };
 
   await spawnAgent(context, { ...deps, onExit });
+  await deps.driftMonitor?.establishBaselineFromRoleConfig(context.agent_id, context.role, deps.rolesConfig);
 }
 
 /**
@@ -63,4 +66,5 @@ export async function spawnCrafterForRevision(
   };
 
   await spawnAgent(context, { ...deps, onExit });
+  await deps.driftMonitor?.establishBaselineFromRoleConfig(context.agent_id, context.role, deps.rolesConfig);
 }

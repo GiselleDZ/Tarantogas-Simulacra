@@ -39,10 +39,13 @@ export type {
   DriftScore,
   DriftSeverity,
   DriftAction,
+  DriftType,
   DriftEvent,
   DriftBaseline,
   DriftSelfCheck,
   DriftReport,
   DriftInterview,
   DriftInterviewTurn,
+  TaskConstraints,
+  ConstraintRetentionResult,
 } from "./drift.js";
